@@ -61,4 +61,4 @@ install: $(TARGET_LIB)
 	@mkdir -p $(DESTDIR)$(PREFIX)/lib/
 	cp $(TARGET_LIB) $(DESTDIR)$(PREFIX)/lib/
 	@mkdir -p $(DESTDIR)$(PREFIX)/include/
-	cp include/vita2d.h $(DESTDIR)$(PREFIX)/include/s
+	cp -R ../include $(DESTDIR)$(PREFIX)
