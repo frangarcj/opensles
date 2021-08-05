@@ -1,5 +1,7 @@
 TARGET_LIB = libOpenSLES.a
-OBJS       = OpenSLES_IID.o           \
+OBJS       = OpenSLESUT.o             \
+        MPH_to.o                      \
+        OpenSLES_IID.o                \
         classes.o                     \
         devices.o                     \
         trace.o                       \
