@@ -1,14 +1,14 @@
 TARGET_LIB = libOpenSLES.a
-OBJS       = OpenSLES_IID.o                \
+OBJS       = OpenSLES_IID.o           \
         classes.o                     \
         devices.o                     \
         trace.o                       \
         locks.o                       \
         sles.o                        \
         sllog.o                       \
-        android_AudioPlayer.o       \
-        android_AudioRecorder.o     \
-        android_OutputMix.o         \
+        SndFile.o                     \
+        SDL.o                         \
+        IOutputMix.o                  \
         sync.o                        \
         IID_to_MPH.o                  \
         ThreadPool.o                  \
@@ -17,10 +17,6 @@ OBJS       = OpenSLES_IID.o                \
         CAudioRecorder.o              \
         CEngine.o                     \
         COutputMix.o                  \
-        IAndroidConfiguration.o       \
-        IAndroidEffect.o              \
-        IAndroidEffectCapabilities.o  \
-        IAndroidEffectSend.o          \
         IBassBoost.o                  \
         IBufferQueue.o                \
         IEffectSend.o                 \
@@ -43,7 +39,7 @@ PREFIX  ?= ${VITASDK}/arm-vita-eabi
 CC      = arm-vita-eabi-gcc
 CXX      = arm-vita-eabi-g++
 AR      = arm-vita-eabi-ar
-CFLAGS  = -Wl,-q -Wall -O3 $(INCLUDES) -DUSE_OUTPUTMIXEXT
+CFLAGS  = -Wl,-q -Wall -O3 $(INCLUDES) -DUSE_OUTPUTMIXEXT -DUSE_SDL -DUSE_SNDFILE
 CXXFLAGS  = $(CFLAGS)
 
 ASFLAGS = $(CFLAGS)
