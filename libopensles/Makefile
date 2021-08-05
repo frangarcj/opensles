@@ -1,0 +1,66 @@
+TARGET_LIB = libOpenSLES.a
+OBJS       = OpenSLES_IID.o                \
+        classes.o                     \
+        devices.o                     \
+        trace.o                       \
+        locks.o                       \
+        sles.o                        \
+        sllog.o                       \
+        android_AudioPlayer.o       \
+        android_AudioRecorder.o     \
+        android_OutputMix.o         \
+        sync.o                        \
+        IID_to_MPH.o                  \
+        ThreadPool.o                  \
+        C3DGroup.o                    \
+        CAudioPlayer.o                \
+        CAudioRecorder.o              \
+        CEngine.o                     \
+        COutputMix.o                  \
+        IAndroidConfiguration.o       \
+        IAndroidEffect.o              \
+        IAndroidEffectCapabilities.o  \
+        IAndroidEffectSend.o          \
+        IBassBoost.o                  \
+        IBufferQueue.o                \
+        IEffectSend.o                 \
+        IEngine.o                     \
+        IEnvironmentalReverb.o        \
+        IEqualizer.o                  \
+        IMuteSolo.o                   \
+        IObject.o                     \
+        IPlay.o                       \
+        IPlaybackRate.o               \
+        IPrefetchStatus.o             \
+        IPresetReverb.o               \
+        IRecord.o                     \
+        ISeek.o                       \
+        IVirtualizer.o                \
+        IVolume.o
+INCLUDES   = -I. -I../include
+
+PREFIX  ?= ${VITASDK}/arm-vita-eabi
+CC      = arm-vita-eabi-gcc
+CXX      = arm-vita-eabi-g++
+AR      = arm-vita-eabi-ar
+CFLAGS  = -Wl,-q -Wall -O3 $(INCLUDES) -DUSE_OUTPUTMIXEXT
+CXXFLAGS  = $(CFLAGS)
+
+ASFLAGS = $(CFLAGS)
+
+all: $(TARGET_LIB)
+
+debug: CFLAGS += -DDEBUG_BUILD
+debug: all
+
+$(TARGET_LIB): $(OBJS)
+	$(AR) -rc $@ $^
+
+clean:
+	rm -rf $(TARGET_LIB) $(OBJS)
+
+install: $(TARGET_LIB)
+	@mkdir -p $(DESTDIR)$(PREFIX)/lib/
+	cp $(TARGET_LIB) $(DESTDIR)$(PREFIX)/lib/
+	@mkdir -p $(DESTDIR)$(PREFIX)/include/
+	cp include/vita2d.h $(DESTDIR)$(PREFIX)/include/s
