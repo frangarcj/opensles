@@ -359,15 +359,14 @@ SLresult IOutputMixExt_checkAudioPlayerSourceSink(CAudioPlayer *this)
     // check the source for compatibility
     switch (this->mDataSource.mLocator.mLocatorType) {
     case SL_DATALOCATOR_BUFFERQUEUE:
-#ifdef ANDROID
     case SL_DATALOCATOR_ANDROIDSIMPLEBUFFERQUEUE:
-#endif
         switch (this->mDataSource.mFormat.mFormatType) {
         case SL_DATAFORMAT_PCM:
 #ifdef USE_SDL
             // SDL is hard-coded to 44.1 kHz, and there is no sample rate converter
-            if (SL_SAMPLINGRATE_44_1 != this->mDataSource.mFormat.mPCM.samplesPerSec)
-                return SL_RESULT_CONTENT_UNSUPPORTED;
+           // if (SL_SAMPLINGRATE_44_1 != this->mDataSource.mFormat.mPCM.samplesPerSec)
+           //       SL_LOGE("WEEE");
+           // return SL_RESULT_CONTENT_UNSUPPORTED;
 #endif
             break;
         default:
