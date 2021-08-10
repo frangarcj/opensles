@@ -272,12 +272,10 @@ static SLresult checkDataLocator(void *pLocator, DataLocator *pDataLocator)
         break;
 
     case SL_DATALOCATOR_BUFFERQUEUE:
-#ifdef ANDROID
     // This is an alias that is _not_ converted; the rest of the code must check for both locator
     // types. That's because it is only an alias for audio players, not audio recorder objects
     // so we have to remember the distinction.
     case SL_DATALOCATOR_ANDROIDSIMPLEBUFFERQUEUE:
-#endif
         pDataLocator->mBufferQueue = *(SLDataLocator_BufferQueue *)pLocator;
         // number of buffers must be specified, there is no default value, and must not be excessive
         if (!((1 <= pDataLocator->mBufferQueue.numBuffers) &&
@@ -403,7 +401,6 @@ static SLresult checkDataLocator(void *pLocator, DataLocator *pDataLocator)
         }
         break;
 
-#ifdef ANDROID
     case SL_DATALOCATOR_ANDROIDFD:
         {
         pDataLocator->mFD = *(SLDataLocator_AndroidFD *)pLocator;
@@ -415,7 +412,6 @@ static SLresult checkDataLocator(void *pLocator, DataLocator *pDataLocator)
         }
         }
         break;
-#endif
 
     default:
         SL_LOGE("invalid locatorType %lu", locatorType);
@@ -486,6 +482,8 @@ static SLresult checkDataFormat(void *pFormat, DataFormat *pDataFormat)
                     result = SL_RESULT_PARAMETER_INVALID;
                     break;
                 default:    // multi-channel
+                        SL_LOGE("WEEE");
+
                     result = SL_RESULT_CONTENT_UNSUPPORTED;
                     break;
                 }
@@ -514,6 +512,8 @@ static SLresult checkDataFormat(void *pFormat, DataFormat *pDataFormat)
                     result = SL_RESULT_PARAMETER_INVALID;
                     break;
                 default:
+                        SL_LOGE("WEEE");
+
                     result = SL_RESULT_CONTENT_UNSUPPORTED;
                     break;
                 }
@@ -531,6 +531,8 @@ static SLresult checkDataFormat(void *pFormat, DataFormat *pDataFormat)
                 case SL_PCMSAMPLEFORMAT_FIXED_24:
                 case SL_PCMSAMPLEFORMAT_FIXED_28:
                 case SL_PCMSAMPLEFORMAT_FIXED_32:
+                        SL_LOGE("WEEE");
+
                     result = SL_RESULT_CONTENT_UNSUPPORTED;
                     break;
                 default:
@@ -547,10 +549,14 @@ static SLresult checkDataFormat(void *pFormat, DataFormat *pDataFormat)
                 case SL_PCMSAMPLEFORMAT_FIXED_8:
                 case SL_PCMSAMPLEFORMAT_FIXED_16:
                     if (pDataFormat->mPCM.containerSize != pDataFormat->mPCM.bitsPerSample) {
+                                SL_LOGE("WEEE");
+
                         result = SL_RESULT_CONTENT_UNSUPPORTED;
                     }
                     break;
                 default:
+                        SL_LOGE("WEEE");
+
                     result = SL_RESULT_CONTENT_UNSUPPORTED;
                     break;
                 }
@@ -656,9 +662,7 @@ SLresult checkSourceFormatVsInterfacesCompatibility(const DataLocatorFormat *pDa
     SLuint32 i;
     switch (pDataLocatorFormat->mLocator.mLocatorType) {
     case SL_DATALOCATOR_BUFFERQUEUE:
-#ifdef ANDROID
     case SL_DATALOCATOR_ANDROIDSIMPLEBUFFERQUEUE:
-#endif
         for (i = 0; i < numInterfaces; i++) {
             // FIXME the == needs work
             if (pInterfaceRequired[i] && (SL_IID_SEEK == pInterfaceIds[i])) {
@@ -717,10 +721,8 @@ SLresult checkDataSource(const SLDataSource *pDataSrc, DataLocatorFormat *pDataL
     case SL_DATALOCATOR_ADDRESS:
     case SL_DATALOCATOR_BUFFERQUEUE:
     case SL_DATALOCATOR_MIDIBUFFERQUEUE:
-#ifdef ANDROID
     case SL_DATALOCATOR_ANDROIDFD:
     case SL_DATALOCATOR_ANDROIDSIMPLEBUFFERQUEUE:
-#endif
         result = checkDataFormat(myDataSrc.pFormat, &pDataLocatorFormat->mFormat);
         if (SL_RESULT_SUCCESS != result) {
             freeDataLocator(&pDataLocatorFormat->mLocator);
@@ -774,9 +776,7 @@ SLresult checkDataSink(const SLDataSink *pDataSink, DataLocatorFormat *pDataLoca
         break;
 
     case SL_DATALOCATOR_BUFFERQUEUE:
-#ifdef ANDROID
     case SL_DATALOCATOR_ANDROIDSIMPLEBUFFERQUEUE:
-#endif
         if (SL_OBJECTID_AUDIOPLAYER == objType) {
             SL_LOGE("buffer queue can't be used as data sink for audio player");
             result = SL_RESULT_PARAMETER_INVALID;

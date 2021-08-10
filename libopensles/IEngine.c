@@ -158,9 +158,7 @@ static SLresult IEngine_CreateAudioPlayer(SLEngineItf self, SLObjectItf *pPlayer
 
                     switch (this->mDataSource.mLocator.mLocatorType) {
                     case SL_DATALOCATOR_BUFFERQUEUE:
-#ifdef ANDROID
                     case SL_DATALOCATOR_ANDROIDSIMPLEBUFFERQUEUE:
-#endif
                         this->mBufferQueue.mNumBuffers =
                                 (SLuint16) this->mDataSource.mLocator.mBufferQueue.numBuffers;
                         assert(SL_DATAFORMAT_PCM == this->mDataSource.mFormat.mFormatType);

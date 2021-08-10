@@ -157,7 +157,7 @@ const signed char MPH_to_AudioPlayer[MPH_MAX] = {
     -1, // not using MPH_ANDROIDEFFECTCAPABILITIES
     -1, // not using MPH_ANDROIDEFFECTSEND
     -1, // not using MPH_ANDROIDCONFIGURATION
-    -1  // not using MPH_ANDROIDSIMPLEBUFFERQUEUE
+    7   // MPH_SIMPLEBUFFERQUEUE    // alias for [MPH_BUFFERQUEUE]
 #endif
     END
 #endif

@@ -11,6 +11,7 @@ OBJS       = OpenSLESUT.o             \
         SndFile.o                     \
         SDL.o                         \
         IOutputMix.o                  \
+        IOutputMixExt.o               \
         sync.o                        \
         IID_to_MPH.o                  \
         ThreadPool.o                  \

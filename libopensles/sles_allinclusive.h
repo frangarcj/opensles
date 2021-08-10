@@ -17,9 +17,7 @@
 /** \file sles_allinclusive.h Everything including the kitchen sink */
 
 #include "SLES/OpenSLES.h"
-#ifdef ANDROID
 #include "SLES/OpenSLES_Android.h"
-#endif
 #include <stddef.h> // offsetof
 #include <stdlib.h> // malloc
 #include <string.h> // memcmp
@@ -248,9 +246,7 @@ typedef union {
     SLDataLocator_MIDIBufferQueue mMIDIBufferQueue;
     SLDataLocator_OutputMix mOutputMix;
     SLDataLocator_URI mURI;
-#ifdef ANDROID
     SLDataLocator_AndroidFD mFD;
-#endif
 } DataLocator;
 
 typedef union {
