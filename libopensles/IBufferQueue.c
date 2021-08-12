@@ -52,7 +52,7 @@ SLresult IBufferQueue_Enqueue(SLBufferQueueItf self, const void *pBuffer, SLuint
     //SL_LOGV("IBufferQueue_Enqueue(%p, %p, %lu)", self, pBuffer, size);
 
     // Note that Enqueue while a Clear is pending is equivalent to Enqueue followed by Clear
-	
+    
     if (NULL == pBuffer || 0 == size) {
         result = SL_RESULT_PARAMETER_INVALID;
     } else {
@@ -65,70 +65,69 @@ SLresult IBufferQueue_Enqueue(SLBufferQueueItf self, const void *pBuffer, SLuint
         if (newRear == this->mFront) {
             result = SL_RESULT_BUFFER_INSUFFICIENT;
         } else {
-			int num_cycles = 44100000 / this->samplerate;
-			int multiplier = 1;
-			if (this->channels == 1)
-				multiplier *= 2;
-			if (this->bps == 8)
-				multiplier *= 2;
-			if (num_cycles != 1 || this->channels == 1 || this->bps == 8) {
-				printf("size: %u, cycles: %d, orig_size: %u, channels: %d, bps: %d\n", size * num_cycles, num_cycles, size, this->channels, this->bps);
-				if (avail_buffers[avail_buffers_idx])
-					free(avail_buffers[avail_buffers_idx]);
-				avail_buffers[avail_buffers_idx] = malloc(size * num_cycles * multiplier);
-				if (this->bps != 8) {
-					if (this->channels == 2) { // PCM16 Stereo
-						uint32_t *src = (uint32_t *)pBuffer;
-						uint32_t *dst = (uint32_t *)avail_buffers[avail_buffers_idx];
-						for (int j = 0; j < size; j += 4) {
-							for (int i = 0; i < num_cycles; i++) {
-								dst[i] = *src;
-							}
-							src++;
-							dst += num_cycles;
-						}
-					} else { // PCM16 Mono
-						uint16_t *src = (uint16_t *)pBuffer;
-						uint16_t *dst = (uint16_t *)avail_buffers[avail_buffers_idx];
-						for (int j = 0; j < size; j += 2) {
-							for (int i = 0; i < num_cycles * 2; i+=2) {
-								dst[i] = *src;
-								dst[i+1] = *src;
-							}
-							src++;
-							dst += num_cycles * 2;
-						}
-					}
-				} else {
-					if (this->channels == 2) { // PCM8 Stereo
-						uint8_t *src = (uint8_t *)pBuffer;
-						int16_t *dst = (int16_t *)avail_buffers[avail_buffers_idx];
-						for (int j = 0; j < size; j += 2) {
-							for (int i = 0; i < num_cycles * 2; i+=2) {
-								dst[i] = (src[0] - 0x80) << 8;
-								dst[i+1] = (src[1] - 0x80) << 8;
-							}
-							src += 2;
-							dst += num_cycles * 2;
-						}
-					} else { // PCM8 Mono
-						uint8_t *src = (uint8_t *)pBuffer;
-						int16_t *dst = (int16_t *)avail_buffers[avail_buffers_idx];
-						for (int j = 0; j < size; j++) {
-							for (int i = 0; i < num_cycles * 2; i+=2) {
-								dst[i] = (*src - 0x80) << 8;
-								dst[i+1] = (*src - 0x80) << 8;
-							}
-							src++;
-							dst += num_cycles * 2;
-						}
-					}
-				}
-				pBuffer = avail_buffers[avail_buffers_idx];
-				avail_buffers_idx = (avail_buffers_idx + 1) % NUM_BUFFERS;
-			}
-			oldRear->mBuffer = pBuffer;
-			oldRear->mSize = size * num_cycles * multiplier;
+            int num_cycles = 44100000 / this->samplerate;
+            int multiplier = 1;
+            if (this->channels == 1)
+                multiplier *= 2;
+            if (this->bps == 8)
+                multiplier *= 2;
+            if (num_cycles != 1 || this->channels == 1 || this->bps == 8) {
+                if (avail_buffers[avail_buffers_idx])
+                    free(avail_buffers[avail_buffers_idx]);
+                avail_buffers[avail_buffers_idx] = malloc(size * num_cycles * multiplier);
+                if (this->bps != 8) {
+                    if (this->channels == 2) { // PCM16 Stereo
+                        uint32_t *src = (uint32_t *)pBuffer;
+                        uint32_t *dst = (uint32_t *)avail_buffers[avail_buffers_idx];
+                        for (int j = 0; j < size; j += 4) {
+                            for (int i = 0; i < num_cycles; i++) {
+                                dst[i] = *src;
+                            }
+                            src++;
+                            dst += num_cycles;
+                        }
+                    } else { // PCM16 Mono
+                        uint16_t *src = (uint16_t *)pBuffer;
+                        uint16_t *dst = (uint16_t *)avail_buffers[avail_buffers_idx];
+                        for (int j = 0; j < size; j += 2) {
+                            for (int i = 0; i < num_cycles * 2; i+=2) {
+                                dst[i] = *src;
+                                dst[i+1] = *src;
+                            }
+                            src++;
+                            dst += num_cycles * 2;
+                        }
+                    }
+                } else {
+                    if (this->channels == 2) { // PCM8 Stereo
+                        uint8_t *src = (uint8_t *)pBuffer;
+                        int16_t *dst = (int16_t *)avail_buffers[avail_buffers_idx];
+                        for (int j = 0; j < size; j += 2) {
+                            for (int i = 0; i < num_cycles * 2; i+=2) {
+                                dst[i] = (src[0] - 0x80) << 8;
+                                dst[i+1] = (src[1] - 0x80) << 8;
+                            }
+                            src += 2;
+                            dst += num_cycles * 2;
+                        }
+                    } else { // PCM8 Mono
+                        uint8_t *src = (uint8_t *)pBuffer;
+                        int16_t *dst = (int16_t *)avail_buffers[avail_buffers_idx];
+                        for (int j = 0; j < size; j++) {
+                            for (int i = 0; i < num_cycles * 2; i+=2) {
+                                dst[i] = (*src - 0x80) << 8;
+                                dst[i+1] = (*src - 0x80) << 8;
+                            }
+                            src++;
+                            dst += num_cycles * 2;
+                        }
+                    }
+                }
+                pBuffer = avail_buffers[avail_buffers_idx];
+                avail_buffers_idx = (avail_buffers_idx + 1) % NUM_BUFFERS;
+            }
+            oldRear->mBuffer = pBuffer;
+            oldRear->mSize = size * num_cycles * multiplier;
             this->mRear = newRear;
             ++this->mState.count;
             result = SL_RESULT_SUCCESS;
