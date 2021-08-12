@@ -152,19 +152,19 @@ static SLresult IEngine_CreateAudioPlayer(SLEngineItf self, SLObjectItf *pPlayer
                     if (SL_RESULT_SUCCESS != result) {
                         break;
                     }
-					
+                    
                     // copy the buffer queue count from source locator to the buffer queue interface
                     // we have already range-checked the value down to a smaller width
 
                     switch (this->mDataSource.mLocator.mLocatorType) {
                     case SL_DATALOCATOR_BUFFERQUEUE:
                     case SL_DATALOCATOR_ANDROIDSIMPLEBUFFERQUEUE:
-						this->mBufferQueue.samplerate = this->mDataSource.mFormat.mPCM.samplesPerSec;
-						this->mBufferQueue.channels = this->mDataSource.mFormat.mPCM.numChannels;
-						this->mBufferQueue.bps = this->mDataSource.mFormat.mPCM.bitsPerSample;
-						this->mDataSource.mFormat.mPCM.samplesPerSec = 44100000;
-						this->mDataSource.mFormat.mPCM.numChannels = 2;
-						this->mDataSource.mFormat.mPCM.bitsPerSample = 16;
+                        this->mBufferQueue.samplerate = this->mDataSource.mFormat.mPCM.samplesPerSec;
+                        this->mBufferQueue.channels = this->mDataSource.mFormat.mPCM.numChannels;
+                        this->mBufferQueue.bps = this->mDataSource.mFormat.mPCM.bitsPerSample;
+                        this->mDataSource.mFormat.mPCM.samplesPerSec = 44100000;
+                        this->mDataSource.mFormat.mPCM.numChannels = 2;
+                        this->mDataSource.mFormat.mPCM.bitsPerSample = 16;
                         this->mBufferQueue.mNumBuffers =
                                 (SLuint16) this->mDataSource.mLocator.mBufferQueue.numBuffers;
                         assert(SL_DATAFORMAT_PCM == this->mDataSource.mFormat.mFormatType);
