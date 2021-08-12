@@ -485,6 +485,9 @@ typedef struct BufferQueue_interface {
     // saves a malloc in the typical case
 #define BUFFER_HEADER_TYPICAL 4
     BufferHeader mTypical[BUFFER_HEADER_TYPICAL+1];
+	uint32_t samplerate;
+	int channels;
+	int bps;
 } IBufferQueue;
 
 #define MAX_DEVICE 2
