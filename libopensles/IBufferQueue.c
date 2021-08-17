@@ -99,6 +99,7 @@ SLresult IBufferQueue_Enqueue(SLBufferQueueItf self, const void *pBuffer, SLuint
                         }
                     }
                 } else {
+                    sceClibMemset(avail_buffers[avail_buffers_idx], 0, size * num_cycles * multiplier);
                     if (this->channels == 2) { // PCM8 Stereo
                         uint8_t *src = (uint8_t *)pBuffer;
                         int16_t *dst = (int16_t *)avail_buffers[avail_buffers_idx];
