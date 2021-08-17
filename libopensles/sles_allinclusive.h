@@ -1344,3 +1344,5 @@ extern void ReleaseStrongRef(IObject *object);
 extern void ReleaseStrongRefAndUnlockExclusive(IObject *object);
 
 extern COutputMix *CAudioPlayer_GetOutputMix(CAudioPlayer *audioPlayer);
+
+extern int _opensles_user_freq __attribute__((weak));

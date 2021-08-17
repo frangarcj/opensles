@@ -65,7 +65,7 @@ SLresult IBufferQueue_Enqueue(SLBufferQueueItf self, const void *pBuffer, SLuint
         if (newRear == this->mFront) {
             result = SL_RESULT_BUFFER_INSUFFICIENT;
         } else {
-            int num_cycles = 44100000 / this->samplerate;
+            int num_cycles = (&_opensles_user_freq!=NULL?_opensles_user_freq:44100) * 1000 / this->samplerate;
             int multiplier = 1;
             if (this->channels == 1)
                 multiplier *= 2;
@@ -74,7 +74,7 @@ SLresult IBufferQueue_Enqueue(SLBufferQueueItf self, const void *pBuffer, SLuint
             if (num_cycles != 1 || this->channels == 1 || this->bps == 8) {
                 if (avail_buffers[avail_buffers_idx])
                     free(avail_buffers[avail_buffers_idx]);
-                avail_buffers[avail_buffers_idx] = malloc(size * num_cycles * multiplier);
+                avail_buffers[avail_buffers_idx] = calloc(1, size * num_cycles * multiplier);
                 if (this->bps != 8) {
                     if (this->channels == 2) { // PCM16 Stereo
                         uint32_t *src = (uint32_t *)pBuffer;
@@ -99,7 +99,6 @@ SLresult IBufferQueue_Enqueue(SLBufferQueueItf self, const void *pBuffer, SLuint
                         }
                     }
                 } else {
-                    sceClibMemset(avail_buffers[avail_buffers_idx], 0, size * num_cycles * multiplier);
                     if (this->channels == 2) { // PCM8 Stereo
                         uint8_t *src = (uint8_t *)pBuffer;
                         int16_t *dst = (int16_t *)avail_buffers[avail_buffers_idx];
