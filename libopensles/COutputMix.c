@@ -71,7 +71,7 @@ bool COutputMix_PreDestroy(void *self)
 #ifdef USE_SDL
         // Mixer callback has acknowledged our request and unlinked output mix from engine.
         // Disable SDL_callback from being called periodically by SDL's internal thread.
-        SDL_PauseAudio(1);
+        // SDL_PauseAudio(1);
 #endif
         return true;
     }
