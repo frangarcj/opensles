@@ -523,10 +523,10 @@ static SLresult IEngine_CreateOutputMix(SLEngineItf self, SLObjectItf *pMix, SLu
 #endif
                 IObject_Publish(&this->mObject);
 #ifdef USE_SDL
-                if (unpause) {
+                /*if (unpause) {
                     // Enable SDL_callback to be called periodically by SDL's internal thread
                     SDL_PauseAudio(0);
-                }
+                }*/
 #endif
                 // return the new output mix object
                 *pMix = &this->mObject.mItf;
