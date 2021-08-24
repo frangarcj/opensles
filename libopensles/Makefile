@@ -9,7 +9,7 @@ OBJS       = OpenSLESUT.o             \
         sles.o                        \
         sllog.o                       \
         SndFile.o                     \
-        SDL.o                         \
+        Vita.o                         \
         IOutputMix.o                  \
         IOutputMixExt.o               \
         sync.o                        \

@@ -90,9 +90,9 @@ SLresult IBufferQueue_Enqueue(SLBufferQueueItf self, const void *pBuffer, SLuint
                         uint16_t *src = (uint16_t *)pBuffer;
                         uint16_t *dst = (uint16_t *)avail_buffers[avail_buffers_idx];
                         for (int j = 0; j < size; j += 2) {
-                            for (int i = 0; i < num_cycles * 2; i+=2) {
-                                dst[i] = *src;
-                                dst[i+1] = *src;
+                            for (int i = 0; i < num_cycles; i++) {
+                                dst[i*2] = *src;
+                                dst[i*2+1] = *src;
                             }
                             src++;
                             dst += num_cycles * 2;
@@ -103,9 +103,9 @@ SLresult IBufferQueue_Enqueue(SLBufferQueueItf self, const void *pBuffer, SLuint
                         uint8_t *src = (uint8_t *)pBuffer;
                         int16_t *dst = (int16_t *)avail_buffers[avail_buffers_idx];
                         for (int j = 0; j < size; j += 2) {
-                            for (int i = 0; i < num_cycles * 2; i+=2) {
-                                dst[i] = (src[0] - 0x80) << 8;
-                                dst[i+1] = (src[1] - 0x80) << 8;
+                            for (int i = 0; i < num_cycles; i++) {
+                                dst[i*2] = ((int16_t)src[0] - 0x80) << 8;
+                                dst[i*2+1] = ((int16_t)src[1] - 0x80) << 8;
                             }
                             src += 2;
                             dst += num_cycles * 2;
@@ -114,9 +114,9 @@ SLresult IBufferQueue_Enqueue(SLBufferQueueItf self, const void *pBuffer, SLuint
                         uint8_t *src = (uint8_t *)pBuffer;
                         int16_t *dst = (int16_t *)avail_buffers[avail_buffers_idx];
                         for (int j = 0; j < size; j++) {
-                            for (int i = 0; i < num_cycles * 2; i+=2) {
-                                dst[i] = (*src - 0x80) << 8;
-                                dst[i+1] = (*src - 0x80) << 8;
+                            for (int i = 0; i < num_cycles; i++) {
+                                dst[i*2] = ((int16_t)*src - 0x80) << 8;
+                                dst[i*2+1] = ((int16_t)*src - 0x80) << 8;
                             }
                             src++;
                             dst += num_cycles * 2;
