@@ -23,8 +23,11 @@
 IEngine *slEngine;
 
 uint8_t audio_buffers[SndFile_NUMBUFS][SndFile_BUFSIZE];
-
+#ifdef HAVE_PTHREAD
+static void audioThread(void* arg) {
+#else
 static int audioThread(unsigned int args, void* arg) {
+#endif
 	int ch = sceAudioOutOpenPort(SCE_AUDIO_OUT_PORT_TYPE_BGM, SndFile_BUFSIZE / 4, &_opensles_user_freq != NULL ? _opensles_user_freq : 44100, SCE_AUDIO_OUT_MODE_STEREO);
 	sceAudioOutSetConfig(ch, -1, -1, (SceAudioOutMode)-1);
 	
@@ -60,8 +63,13 @@ static int audioThread(unsigned int args, void* arg) {
 void SDL_open(IEngine *thisEngine)
 {
 	slEngine = thisEngine;
+#ifdef HAVE_PTHREAD
+	pthread_t thd;
+	pthread_create(&thd, NULL, audioThread, NULL);
+#else
 	SceUID thd = sceKernelCreateThread("OpenSLES Playback", &audioThread, 0x10000100, 0x10000, 0, 0, NULL);
 	sceKernelStartThread(thd, 0, NULL);
+#endif
 }
 
 
