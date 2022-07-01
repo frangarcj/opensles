@@ -38,7 +38,7 @@ static int audioThread(unsigned int args, void* arg) {
 	
 	for (;;) {
 		uint8_t *stream = audio_buffers[buf_idx];
-		memset(stream, 0, (size_t)SndFile_BUFSIZE);
+		sceClibMemset(stream, 0, (size_t)SndFile_BUFSIZE);
 		buf_idx = (buf_idx + 1) % SndFile_NUMBUFS;
 		
 		// A peek lock would be risky if output mixes are dynamic, so we use SDL_PauseAudio to
