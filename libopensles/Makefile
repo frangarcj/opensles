@@ -48,6 +48,10 @@ ifeq ($(HAVE_PTHREAD),1)
 CFLAGS += -DHAVE_PTHREAD
 endif
 
+ifeq ($(SYBERIA),1)
+CFLAGS += -DSYBERIA
+endif
+
 CXXFLAGS  = $(CFLAGS)
 
 ASFLAGS = $(CFLAGS)

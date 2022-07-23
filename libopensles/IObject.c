@@ -498,12 +498,23 @@ static void IObject_AbortAsyncOperation(SLObjectItf self)
     SL_LEAVE_INTERFACE_VOID
 }
 
+#ifdef SYBERIA
+extern IObject *players[20];
+#endif
 
 void IObject_Destroy(SLObjectItf self)
 {
     SL_ENTER_INTERFACE_VOID
 
     IObject *this = (IObject *) self;
+#ifdef SYBERIA
+	for (int i = 0; i < 20; i++) {
+		if (players[i] == self) {
+			players[i] = NULL;
+			break;
+		}
+	}
+#endif
     // mutex is unlocked
     Abort_internal(this);
     // mutex is locked

@@ -94,6 +94,10 @@ static SLresult IEngine_CreateVibraDevice(SLEngineItf self, SLObjectItf *pDevice
     SL_LEAVE_INTERFACE
 }
 
+#ifdef SYBERIA
+IObject *players[20] = {};
+int idx = 0;
+#endif
 
 static SLresult IEngine_CreateAudioPlayer(SLEngineItf self, SLObjectItf *pPlayer,
     SLDataSource *pAudioSrc, SLDataSink *pAudioSnk, SLuint32 numInterfaces,
@@ -104,6 +108,23 @@ static SLresult IEngine_CreateAudioPlayer(SLEngineItf self, SLObjectItf *pPlayer
     if (NULL == pPlayer) {
        result = SL_RESULT_PARAMETER_INVALID;
     } else {
+#ifdef SYBERIA
+		if (players[idx]) {
+			SLPlayItf playerPlay;
+			SLuint32 playerState;
+			SLObjectItf p = players[idx];
+			SLresult res = (*p)->GetInterface(p, SL_IID_PLAY, &playerPlay);
+			if (res == SL_RESULT_SUCCESS) {
+				(*playerPlay)->GetPlayState(playerPlay, &playerState);
+				if (playerState == SL_PLAYSTATE_STOPPED) {
+					IObject_Destroy(players[idx]);
+				}
+			} else {
+				// This seems to not be an AudioPlayer so we just free the entry
+				players[idx] = NULL;
+			}
+		}
+#endif
         *pPlayer = NULL;
         unsigned exposedMask;
         const ClassTable *pCAudioPlayer_class = objectIDtoClass(SL_OBJECTID_AUDIOPLAYER);
@@ -111,7 +132,6 @@ static SLresult IEngine_CreateAudioPlayer(SLEngineItf self, SLObjectItf *pPlayer
         result = checkInterfaces(pCAudioPlayer_class, numInterfaces,
             pInterfaceIds, pInterfaceRequired, &exposedMask);
         if (SL_RESULT_SUCCESS == result) {
-
             // Construct our new AudioPlayer instance
             CAudioPlayer *this = (CAudioPlayer *) construct(pCAudioPlayer_class, exposedMask, self);
             if (NULL == this) {
@@ -240,6 +260,10 @@ static SLresult IEngine_CreateAudioPlayer(SLEngineItf self, SLObjectItf *pPlayer
                     IObject_Publish(&this->mObject);
                     // return the new audio player object
                     *pPlayer = &this->mObject.mItf;
+#ifdef SYBERIA
+					players[idx] = &this->mObject.mItf;
+					idx = (idx + 1) % 20;
+#endif
                 }
 
             }
