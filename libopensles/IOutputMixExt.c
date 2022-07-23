@@ -117,6 +117,9 @@ static SLboolean track_check(Track *track)
                 // no buffers on queue, so playable but not playing
                 // NTH should be able to call a desperation callback when completely starved,
                 // or call less often than every buffer based on high/low water-marks
+#ifdef SYBERIA
+				audioPlayer->mPlay.mState = SL_PLAYSTATE_STOPPING;
+#endif
             }
 
             // copy gains from audio player to track
