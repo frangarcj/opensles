@@ -1284,6 +1284,7 @@ extern const char * const interface_names[MPH_MAX];
 #define ATTR_TRANSPORT  ((unsigned) 0x1 << 1) // play state, looping
 #define ATTR_POSITION   ((unsigned) 0x1 << 2) // requested position (a.k.a. seek position)
 #define ATTR_ENQUEUE    ((unsigned) 0x1 << 3) // buffer queue became non-empty and in playing state
+#define ATTR_PLAYSTATE  ((unsigned) 0x1 << 4) // actual play state transition requiring transport work
 
 #define SL_DATALOCATOR_NULL 0    // application specified a NULL value for pLocator
 #define SL_DATAFORMAT_NULL 0     // application specified a NULL or undefined value for pFormat

@@ -205,9 +205,6 @@ void object_unlock_exclusive_attributes(IObject *this, unsigned attributes)
 #ifdef ANDROID
             attributes &= ~ATTR_TRANSPORT;   // no need to process asynchronously also
             ap = (CAudioPlayer *) this;
-            // FIXME should only call when state changes
-            android_audioPlayer_setPlayState(ap, false /*lockAP*/);
-            // FIXME ditto, but for either eventflags or marker position
             android_audioPlayer_useEventMask(ap);
 #else
             //audioPlayerTransportUpdate(ap);
@@ -217,6 +214,16 @@ void object_unlock_exclusive_attributes(IObject *this, unsigned attributes)
             attributes &= ~ATTR_TRANSPORT;   // no need to process asynchronously also
             CAudioRecorder* ar = (CAudioRecorder *) this;
             android_audioRecorder_useEventMask(ar);
+#endif
+        }
+    }
+
+    if (attributes & ATTR_PLAYSTATE) {
+        if (SL_OBJECTID_AUDIOPLAYER == objectID) {
+#ifdef ANDROID
+            attributes &= ~ATTR_PLAYSTATE;   // no need to process asynchronously also
+            ap = (CAudioPlayer *) this;
+            android_audioPlayer_setPlayState(ap, false /*lockAP*/);
 #endif
         }
     }

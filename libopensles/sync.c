@@ -93,7 +93,7 @@ void *sync_start(void *arg)
                 // do something here
                 object_unlock_exclusive(instance);
 #ifdef USE_SNDFILE
-                if (attributesMask & (ATTR_POSITION | ATTR_TRANSPORT)) {
+                if (attributesMask & (ATTR_POSITION | ATTR_PLAYSTATE)) {
                     CAudioPlayer *audioPlayer = (CAudioPlayer *) instance;
                     audioPlayerTransportUpdate(audioPlayer);
                 }
