@@ -20,55 +20,107 @@
 #include <vitasdk.h>
 
 /** \brief Called by SDL to fill the next audio output buffer */
-IEngine *slEngine;
+static IEngine *slEngine;
+
+static volatile int audio_shutdown_requested;
+static volatile int audio_thread_running;
+static int audio_port = -1;
+
+#ifdef HAVE_PTHREAD
+static pthread_t audio_thread_handle;
+static int audio_thread_valid;
+#else
+static SceUID audio_thread_handle = -1;
+#endif
 
 uint8_t audio_buffers[SndFile_NUMBUFS][SndFile_BUFSIZE];
+
+static int opensles_output_freq(void) {
+	return (&_opensles_user_freq != NULL && _opensles_user_freq > 0)
+						 ? _opensles_user_freq
+						 : 44100;
+}
+
+static void fill_output_buffer(uint8_t *stream, SLuint32 size) {
+	sceClibMemset(stream, 0, (size_t)size);
+
+	if (NULL == slEngine) {
+		return;
+	}
+
+	interface_lock_shared(slEngine);
+	COutputMix *outputMix = slEngine->mOutputMix;
+	interface_unlock_shared(slEngine);
+	if (NULL != outputMix) {
+		SLOutputMixExtItf OutputMixExt = &outputMix->mOutputMixExt.mItf;
+		IOutputMixExt_FillBuffer(OutputMixExt, stream, size);
+	}
+}
+
 #ifdef HAVE_PTHREAD
-static void audioThread(void* arg) {
+static void *audioThread(void *arg) {
 #else
-static int audioThread(unsigned int args, void* arg) {
+static int audioThread(unsigned int args, void *arg) {
 #endif
-	int ch = sceAudioOutOpenPort(SCE_AUDIO_OUT_PORT_TYPE_BGM, SndFile_BUFSIZE / 4, &_opensles_user_freq != NULL ? _opensles_user_freq : 44100, SCE_AUDIO_OUT_MODE_STEREO);
+	int ch = sceAudioOutOpenPort(SCE_AUDIO_OUT_PORT_TYPE_BGM, SndFile_BUFSIZE / 4,
+															 opensles_output_freq(),
+															 SCE_AUDIO_OUT_MODE_STEREO);
+	if (ch < 0) {
+		SL_LOGE("Unable to open Vita audio port: 0x%x", ch);
+#ifdef HAVE_PTHREAD
+		return NULL;
+#else
+		return ch;
+#endif
+	}
+
+	audio_port = ch;
+	audio_thread_running = 1;
 	sceAudioOutSetConfig(ch, -1, -1, (SceAudioOutMode)-1);
-	
+
 	int vol_stereo[] = {32767, 32767};
-	sceAudioOutSetVolume(ch, (SceAudioOutChannelFlag)(SCE_AUDIO_VOLUME_FLAG_L_CH | SCE_AUDIO_VOLUME_FLAG_R_CH), vol_stereo);
-	
+	sceAudioOutSetVolume(
+			ch,
+			(SceAudioOutChannelFlag)(SCE_AUDIO_VOLUME_FLAG_L_CH | SCE_AUDIO_VOLUME_FLAG_R_CH),
+			vol_stereo);
+
 	int buf_idx = 0;
-	
-	for (;;) {
+
+	while (!audio_shutdown_requested) {
 		uint8_t *stream = audio_buffers[buf_idx];
-		sceClibMemset(stream, 0, (size_t)SndFile_BUFSIZE);
 		buf_idx = (buf_idx + 1) % SndFile_NUMBUFS;
-		
-		// A peek lock would be risky if output mixes are dynamic, so we use SDL_PauseAudio to
-		// temporarily disable callbacks during any change to the current output mix, and use a
-		// shared lock here
-		interface_lock_shared(slEngine);
-		COutputMix *outputMix = slEngine->mOutputMix;
-		interface_unlock_shared(slEngine);
-		if (NULL != outputMix) {
-			SLOutputMixExtItf OutputMixExt = &outputMix->mOutputMixExt.mItf;
-			IOutputMixExt_FillBuffer(OutputMixExt, stream, (SLuint32)SndFile_BUFSIZE);
-		}
-		
+
+		fill_output_buffer(stream, (SLuint32)SndFile_BUFSIZE);
 		sceAudioOutOutput(ch, stream);
 	}
-	
-	return sceKernelExitDeleteThread(0);
+
+	sceAudioOutReleasePort(ch);
+	audio_port = -1;
+	audio_thread_running = 0;
+
+#ifdef HAVE_PTHREAD
+	return NULL;
+#else
+	return 0;
+#endif
 }
 
 /** \brief Called during slCreateEngine */
 
 void SDL_open(IEngine *thisEngine)
 {
+        SDL_close();
 	slEngine = thisEngine;
+        audio_shutdown_requested = 0;
+        audio_thread_running = 0;
 #ifdef HAVE_PTHREAD
-	pthread_t thd;
-	pthread_create(&thd, NULL, audioThread, NULL);
+	audio_thread_valid = (0 == pthread_create(&audio_thread_handle, NULL, audioThread, NULL));
 #else
-	SceUID thd = sceKernelCreateThread("OpenSLES Playback", &audioThread, 0x10000100, 0x10000, 0, 0, NULL);
-	sceKernelStartThread(thd, 0, NULL);
+	audio_thread_handle = sceKernelCreateThread("OpenSLES Playback", &audioThread, 0x10000100,
+                                                0x10000, 0, 0, NULL);
+	if (audio_thread_handle >= 0) {
+		sceKernelStartThread(audio_thread_handle, 0, NULL);
+	}
 #endif
 }
 
@@ -77,4 +129,20 @@ void SDL_open(IEngine *thisEngine)
 
 void SDL_close(void)
 {
+	audio_shutdown_requested = 1;
+#ifdef HAVE_PTHREAD
+	if (audio_thread_valid) {
+		pthread_join(audio_thread_handle, NULL);
+		audio_thread_valid = 0;
+	}
+#else
+	if (audio_thread_handle >= 0) {
+		sceKernelWaitThreadEnd(audio_thread_handle, NULL, NULL);
+		sceKernelDeleteThread(audio_thread_handle);
+		audio_thread_handle = -1;
+	}
+#endif
+	audio_thread_running = 0;
+	audio_port = -1;
+	slEngine = NULL;
 }

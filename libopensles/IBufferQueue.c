@@ -42,9 +42,16 @@ static SLuint32 getAssociatedState(IBufferQueue *this)
     return state;
 }
 
-#define NUM_BUFFERS 32
-void *avail_buffers[NUM_BUFFERS] = {NULL};
-int avail_buffers_idx = 0;
+void IBufferQueue_ReleaseArrayBuffers(IBufferQueue *this)
+{
+    if ((NULL == this) || (NULL == this->mArray)) {
+        return;
+    }
+
+    for (unsigned i = 0; i < this->mNumBuffers + 1; ++i) {
+        BufferHeader_release(&this->mArray[i]);
+    }
+}
 
 SLresult IBufferQueue_Enqueue(SLBufferQueueItf self, const void *pBuffer, SLuint32 size)
 {
@@ -67,18 +74,22 @@ SLresult IBufferQueue_Enqueue(SLBufferQueueItf self, const void *pBuffer, SLuint
         } else {
             int num_cycles = (&_opensles_user_freq!=NULL?_opensles_user_freq:44100) * 1000 / this->samplerate;
             int multiplier = 1;
+            void *ownedBuffer = NULL;
             if (this->channels == 1)
                 multiplier *= 2;
             if (this->bps == 8)
                 multiplier *= 2;
             if (num_cycles != 1 || this->channels == 1 || this->bps == 8) {
-                if (avail_buffers[avail_buffers_idx])
-                    free(avail_buffers[avail_buffers_idx]);
-                avail_buffers[avail_buffers_idx] = calloc(1, size * num_cycles * multiplier);
+                ownedBuffer = calloc(1, size * num_cycles * multiplier);
+                if (NULL == ownedBuffer) {
+                    interface_unlock_exclusive(this);
+                    result = SL_RESULT_RESOURCE_ERROR;
+                    goto fail;
+                }
                 if (this->bps != 8) {
                     if (this->channels == 2) { // PCM16 Stereo
                         uint32_t *src = (uint32_t *)pBuffer;
-                        uint32_t *dst = (uint32_t *)avail_buffers[avail_buffers_idx];
+                        uint32_t *dst = (uint32_t *)ownedBuffer;
                         for (int j = 0; j < size; j += 4) {
                             for (int i = 0; i < num_cycles; i++) {
                                 dst[i] = *src;
@@ -88,7 +99,7 @@ SLresult IBufferQueue_Enqueue(SLBufferQueueItf self, const void *pBuffer, SLuint
                         }
                     } else { // PCM16 Mono
                         uint16_t *src = (uint16_t *)pBuffer;
-                        uint16_t *dst = (uint16_t *)avail_buffers[avail_buffers_idx];
+                        uint16_t *dst = (uint16_t *)ownedBuffer;
                         for (int j = 0; j < size; j += 2) {
                             for (int i = 0; i < num_cycles; i++) {
                                 dst[i*2] = *src;
@@ -101,7 +112,7 @@ SLresult IBufferQueue_Enqueue(SLBufferQueueItf self, const void *pBuffer, SLuint
                 } else {
                     if (this->channels == 2) { // PCM8 Stereo
                         uint8_t *src = (uint8_t *)pBuffer;
-                        int16_t *dst = (int16_t *)avail_buffers[avail_buffers_idx];
+                        int16_t *dst = (int16_t *)ownedBuffer;
                         for (int j = 0; j < size; j += 2) {
                             for (int i = 0; i < num_cycles; i++) {
                                 dst[i*2] = ((int16_t)src[0] - 0x80) << 8;
@@ -112,7 +123,7 @@ SLresult IBufferQueue_Enqueue(SLBufferQueueItf self, const void *pBuffer, SLuint
                         }
                     } else { // PCM8 Mono
                         uint8_t *src = (uint8_t *)pBuffer;
-                        int16_t *dst = (int16_t *)avail_buffers[avail_buffers_idx];
+                        int16_t *dst = (int16_t *)ownedBuffer;
                         for (int j = 0; j < size; j++) {
                             for (int i = 0; i < num_cycles; i++) {
                                 dst[i*2] = ((int16_t)*src - 0x80) << 8;
@@ -123,11 +134,12 @@ SLresult IBufferQueue_Enqueue(SLBufferQueueItf self, const void *pBuffer, SLuint
                         }
                     }
                 }
-                pBuffer = avail_buffers[avail_buffers_idx];
-                avail_buffers_idx = (avail_buffers_idx + 1) % NUM_BUFFERS;
+                pBuffer = ownedBuffer;
             }
+            assert(NULL == oldRear->mOwnedBuffer);
             oldRear->mBuffer = pBuffer;
             oldRear->mSize = size * num_cycles * multiplier;
+            oldRear->mOwnedBuffer = ownedBuffer;
             this->mRear = newRear;
             ++this->mState.count;
             result = SL_RESULT_SUCCESS;
@@ -137,6 +149,7 @@ SLresult IBufferQueue_Enqueue(SLBufferQueueItf self, const void *pBuffer, SLuint
             (1 == this->mState.count) && (SL_PLAYSTATE_PLAYING == getAssociatedState(this))) ?
             ATTR_ENQUEUE : ATTR_NONE);
     }
+fail:
     SL_LEAVE_INTERFACE
 }
 
@@ -155,6 +168,7 @@ SLresult IBufferQueue_Clear(SLBufferQueueItf self)
         // flush associated audio player
         result = android_audioPlayer_bufferQueue_onClear(audioPlayer);
         if (SL_RESULT_SUCCESS == result) {
+            IBufferQueue_ReleaseArrayBuffers(this);
             this->mFront = &this->mArray[0];
             this->mRear = &this->mArray[0];
             this->mState.count = 0;
@@ -254,8 +268,7 @@ void IBufferQueue_init(void *self)
     BufferHeader *bufferHeader = this->mTypical;
     unsigned i;
     for (i = 0; i < BUFFER_HEADER_TYPICAL+1; ++i, ++bufferHeader) {
-        bufferHeader->mBuffer = NULL;
-        bufferHeader->mSize = 0;
+        BufferHeader_reset(bufferHeader);
     }
 }
 
@@ -266,6 +279,7 @@ void IBufferQueue_init(void *self)
 
 void IBufferQueue_Destroy(IBufferQueue *this)
 {
+    IBufferQueue_ReleaseArrayBuffers(this);
     if ((NULL != this->mArray) && (this->mArray != this->mTypical)) {
         free(this->mArray);
         this->mArray = NULL;

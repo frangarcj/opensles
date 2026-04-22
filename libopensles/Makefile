@@ -42,7 +42,7 @@ PREFIX  ?= ${VITASDK}/arm-vita-eabi
 CC      = arm-vita-eabi-gcc
 CXX      = arm-vita-eabi-g++
 AR      = arm-vita-eabi-ar
-CFLAGS  = -Wl,-q -Wall -O3 $(INCLUDES) -DUSE_OUTPUTMIXEXT -DUSE_SDL -DUSE_SNDFILE
+CFLAGS  = -std=gnu17 -Wl,-q -Wall -O3 $(INCLUDES) -DUSE_OUTPUTMIXEXT -DUSE_SDL -DUSE_SNDFILE
 
 ifeq ($(HAVE_PTHREAD),1)
 CFLAGS += -DHAVE_PTHREAD
