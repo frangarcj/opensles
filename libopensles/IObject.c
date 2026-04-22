@@ -18,6 +18,45 @@
 
 #include "sles_allinclusive.h"
 
+static bool ObjectHasPendingAsyncLocked(IObject *this)
+{
+    const ClassTable *class__ = this->mClass;
+
+    switch (this->mState) {
+    case SL_OBJECT_STATE_REALIZING_1:
+    case SL_OBJECT_STATE_RESUMING_1:
+    case SL_OBJECT_STATE_REALIZING_1A:
+    case SL_OBJECT_STATE_REALIZING_2:
+    case SL_OBJECT_STATE_RESUMING_1A:
+    case SL_OBJECT_STATE_RESUMING_2:
+        return true;
+    case SL_OBJECT_STATE_DESTROYING:
+        assert(false);
+        return false;
+    default:
+        break;
+    }
+
+    SLuint8 *interfaceStateP = this->mInterfaceStates;
+    unsigned index;
+    for (index = 0; index < class__->mInterfaceCount; ++index, ++interfaceStateP) {
+        switch (*interfaceStateP) {
+        case INTERFACE_ADDING_1:
+        case INTERFACE_RESUMING_1:
+        case INTERFACE_ADDING_1A:
+        case INTERFACE_ADDING_2:
+        case INTERFACE_RESUMING_1A:
+        case INTERFACE_RESUMING_2:
+        case INTERFACE_REMOVING:
+            return true;
+        default:
+            break;
+        }
+    }
+
+    return false;
+}
+
 
 // Called by a worker thread to handle an asynchronous Object.Realize.
 // Parameter self is the Object.
@@ -69,6 +108,7 @@ static void HandleRealize(void *self, int unused)
 
     // mutex is locked, update state
     this->mState = state;
+    object_cond_broadcast(this);
 
     // Make a copy of these, so we can call the callback with mutex unlocked
     slObjectCallback callback = this->mCallback;
@@ -113,6 +153,7 @@ static SLresult IObject_Realize(SLObjectItf self, SLboolean async)
                 // Engine was destroyed during realize, or insufficient memory
                 object_lock_exclusive(this);
                 this->mState = SL_OBJECT_STATE_UNREALIZED;
+                object_cond_broadcast(this);
                 object_unlock_exclusive(this);
             }
             break;
@@ -197,6 +238,7 @@ static void HandleResume(void *self, int unused)
 
     // mutex is unlocked, update state
     this->mState = state;
+    object_cond_broadcast(this);
 
     // Make a copy of these, so we can call the callback with mutex unlocked
     slObjectCallback callback = this->mCallback;
@@ -241,6 +283,7 @@ static SLresult IObject_Resume(SLObjectItf self, SLboolean async)
                 // Engine was destroyed during resume, or insufficient memory
                 object_lock_exclusive(this);
                 this->mState = SL_OBJECT_STATE_SUSPENDED;
+                object_cond_broadcast(this);
                 object_unlock_exclusive(this);
             }
             break;
@@ -445,42 +488,8 @@ static void Abort_internal(IObject *this)
 
     // Wait until all asynchronous operations either complete normally or recognize the abort
     while (anyAsync) {
-        object_unlock_exclusive(this);
-        // FIXME should use condition variable instead of polling
-        usleep(20000);
-        anyAsync = false;
-        object_lock_exclusive(this);
-        switch (this->mState) {
-        case SL_OBJECT_STATE_REALIZING_1:   // state 1 means it cycled during the usleep window
-        case SL_OBJECT_STATE_RESUMING_1:
-        case SL_OBJECT_STATE_REALIZING_1A:
-        case SL_OBJECT_STATE_REALIZING_2:
-        case SL_OBJECT_STATE_RESUMING_1A:
-        case SL_OBJECT_STATE_RESUMING_2:
-            anyAsync = true;
-            break;
-        case SL_OBJECT_STATE_DESTROYING:
-            assert(false);
-            break;
-        default:
-            break;
-        }
-        interfaceStateP = this->mInterfaceStates;
-        for (index = 0; index < class__->mInterfaceCount; ++index, ++interfaceStateP) {
-            switch (*interfaceStateP) {
-            case INTERFACE_ADDING_1:    // state 1 means it cycled during the usleep window
-            case INTERFACE_RESUMING_1:
-            case INTERFACE_ADDING_1A:
-            case INTERFACE_ADDING_2:
-            case INTERFACE_RESUMING_1A:
-            case INTERFACE_RESUMING_2:
-            case INTERFACE_REMOVING:
-                anyAsync = true;
-                break;
-            default:
-                break;
-            }
-        }
+        object_cond_wait(this);
+        anyAsync = ObjectHasPendingAsyncLocked(this);
     }
 
     // At this point there are no pending asynchronous operations
