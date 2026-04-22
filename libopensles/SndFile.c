@@ -272,6 +272,7 @@ void audioPlayerTransportUpdate(CAudioPlayer *audioPlayer)
         object_unlock_exclusive(&audioPlayer->mObject);
 
         if (SL_TIME_UNKNOWN != pos) {
+            SLboolean seekSucceeded = SL_BOOLEAN_FALSE;
 
             // discard any enqueued buffers for the old position
             IBufferQueue_Clear(&audioPlayer->mBufferQueue.mItf);
@@ -279,12 +280,21 @@ void audioPlayerTransportUpdate(CAudioPlayer *audioPlayer)
             sndfile_update_prefetch_fill_level(audioPlayer, 0);
 
             pthread_mutex_lock(&audioPlayer->mSndFile.mMutex);
-            // FIXME why void?
-            (void) sf_seek(audioPlayer->mSndFile.mSNDFILE, (sf_count_t) (((long long) pos *
-                audioPlayer->mSndFile.mSfInfo.samplerate) / 1000LL), SEEK_SET);
-            audioPlayer->mSndFile.mEOF = SL_BOOLEAN_FALSE;
-            audioPlayer->mSndFile.mWhich = 0;
+            sf_count_t seekResult = sf_seek(audioPlayer->mSndFile.mSNDFILE,
+                (sf_count_t) (((long long) pos * audioPlayer->mSndFile.mSfInfo.samplerate) / 1000LL),
+                SEEK_SET);
+            if (seekResult >= 0) {
+                audioPlayer->mSndFile.mEOF = SL_BOOLEAN_FALSE;
+                audioPlayer->mSndFile.mWhich = 0;
+                seekSucceeded = SL_BOOLEAN_TRUE;
+            }
             pthread_mutex_unlock(&audioPlayer->mSndFile.mMutex);
+
+            if (!seekSucceeded) {
+                SL_LOGE("sndfile seek failed for position %u ms", (unsigned) pos);
+                sndfile_update_prefetch_status(audioPlayer, SL_PREFETCHSTATUS_UNDERFLOW);
+                return;
+            }
 
         }
 
