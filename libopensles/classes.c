@@ -60,12 +60,7 @@ static const struct iid_vtable AudioPlayer_interfaces[INTERFACES_AudioPlayer] = 
     {MPH_3DGROUPING, INTERFACE_EXPLICIT_GAME, offsetof(CAudioPlayer, m3DGrouping)},
     {MPH_3DLOCATION, INTERFACE_EXPLICIT_GAME, offsetof(CAudioPlayer, m3DLocation)},
     {MPH_3DSOURCE, INTERFACE_EXPLICIT_GAME, offsetof(CAudioPlayer, m3DSource)},
-#ifdef USE_SNDFILE
-    // FIXME Currently we create an internal buffer queue for playing encoded files
-    {MPH_BUFFERQUEUE, INTERFACE_IMPLICIT, offsetof(CAudioPlayer, mBufferQueue)},
-#else
     {MPH_BUFFERQUEUE, INTERFACE_EXPLICIT_GAME, offsetof(CAudioPlayer, mBufferQueue)},
-#endif
     {MPH_EFFECTSEND, INTERFACE_EXPLICIT_GAME_MUSIC, offsetof(CAudioPlayer, mEffectSend)},
     {MPH_MUTESOLO, INTERFACE_EXPLICIT_GAME, offsetof(CAudioPlayer, mMuteSolo)},
     {MPH_METADATAEXTRACTION, INTERFACE_DYNAMIC_GAME_MUSIC,

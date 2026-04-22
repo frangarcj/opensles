@@ -172,6 +172,15 @@ static SLresult IEngine_CreateAudioPlayer(SLEngineItf self, SLObjectItf *pPlayer
                     if (SL_RESULT_SUCCESS != result) {
                         break;
                     }
+
+                    if ((SL_DATALOCATOR_BUFFERQUEUE != this->mDataSource.mLocator.mLocatorType) &&
+                            (SL_DATALOCATOR_ANDROIDSIMPLEBUFFERQUEUE !=
+                                this->mDataSource.mLocator.mLocatorType)) {
+                        int bufferQueueIndex = pCAudioPlayer_class->mMPH_to_index[MPH_BUFFERQUEUE];
+                        if (0 <= bufferQueueIndex) {
+                            exposedMask &= ~(1u << bufferQueueIndex);
+                        }
+                    }
                     
                     // copy the buffer queue count from source locator to the buffer queue interface
                     // we have already range-checked the value down to a smaller width
