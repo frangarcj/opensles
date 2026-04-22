@@ -18,6 +18,27 @@
 
 #include "sles_allinclusive.h"
 
+#include <errno.h>
+
+static void sync_wait_for_work(CEngine *this)
+{
+    struct timespec wake_time;
+    clock_gettime(CLOCK_REALTIME, &wake_time);
+    wake_time.tv_nsec += 20 * 1000 * 1000;
+    if (wake_time.tv_nsec >= 1000000000L) {
+        wake_time.tv_sec += 1;
+        wake_time.tv_nsec -= 1000000000L;
+    }
+
+    while (!this->mEngine.mShutdown && !this->m3DCommit.mWaiting && !this->mEngine.mChangedMask) {
+        int ok = pthread_cond_timedwait(&this->mObject.mCond, &this->mObject.mMutex, &wake_time);
+        if ((0 == ok) || (ETIMEDOUT == ok)) {
+            break;
+        }
+        assert(false);
+    }
+}
+
 
 /** \brief Sync thread.
  *  The sync thread runs periodically to synchronize audio state between
@@ -29,12 +50,8 @@ void *sync_start(void *arg)
 {
     CEngine *this = (CEngine *) arg;
     for (;;) {
-
-        // FIXME should be driven by cond_signal rather than polling,
-        // or at least make the poll interval longer or configurable
-        usleep(20000*5);
-
         object_lock_exclusive(&this->mObject);
+        sync_wait_for_work(this);
         if (this->mEngine.mShutdown) {
             this->mEngine.mShutdownAck = SL_BOOLEAN_TRUE;
             // broadcast not signal, because this condition is also used for other purposes

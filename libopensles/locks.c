@@ -220,6 +220,7 @@ void object_unlock_exclusive_attributes(IObject *this, unsigned attributes)
             IEngine *thisEngine = this->mEngine;
             interface_lock_exclusive(thisEngine);
             thisEngine->mChangedMask |= 1 << id;
+            object_cond_broadcast(thisEngine->mThis);
             interface_unlock_exclusive(thisEngine);
         }
     }
