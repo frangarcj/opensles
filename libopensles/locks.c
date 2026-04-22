@@ -59,12 +59,48 @@ void object_lock_exclusive_(IObject *this, const char *file, int line)
     this->mFile = file;
     this->mLine = line;
 }
+
+SLboolean object_trylock_exclusive_(IObject *this, const char *file, int line)
+{
+    int ok = pthread_mutex_trylock(&this->mMutex);
+    if (EBUSY == ok) {
+        return SL_BOOLEAN_FALSE;
+    }
+    assert(0 == ok);
+
+    pthread_t zero;
+    memset(&zero, 0, sizeof(pthread_t));
+    if (0 != memcmp(&zero, &this->mOwner, sizeof(pthread_t))) {
+        if (pthread_equal(pthread_self(), this->mOwner)) {
+            SL_LOGE("%s:%d: object %p was recursively trylocked by %p at %s:%d\n",
+                file, line, this, *(void **)&this->mOwner, this->mFile, this->mLine);
+        } else {
+            SL_LOGE("%s:%d: object %p was left unlocked in unexpected state by %p at %s:%d\n",
+                file, line, this, *(void **)&this->mOwner, this->mFile, this->mLine);
+        }
+        assert(false);
+    }
+    this->mOwner = pthread_self();
+    this->mFile = file;
+    this->mLine = line;
+    return SL_BOOLEAN_TRUE;
+}
 #else
 void object_lock_exclusive(IObject *this)
 {
     int ok;
     ok = pthread_mutex_lock(&this->mMutex);
     assert(0 == ok);
+}
+
+SLboolean object_trylock_exclusive(IObject *this)
+{
+    int ok = pthread_mutex_trylock(&this->mMutex);
+    if (EBUSY == ok) {
+        return SL_BOOLEAN_FALSE;
+    }
+    assert(0 == ok);
+    return SL_BOOLEAN_TRUE;
 }
 #endif
 
