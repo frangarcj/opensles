@@ -19,6 +19,66 @@
 #include "sles_allinclusive.h"
 
 
+static SLpermille sndfile_compute_fill_level(SLuint32 queuedBufferCount, SLuint16 totalBuffers)
+{
+    if ((0 == totalBuffers) || (0 == queuedBufferCount)) {
+        return 0;
+    }
+    if (queuedBufferCount >= totalBuffers) {
+        return 1000;
+    }
+    return (SLpermille) ((queuedBufferCount * 1000) / totalBuffers);
+}
+
+
+static void sndfile_update_prefetch_status(CAudioPlayer *audioPlayer, SLuint32 status)
+{
+    slPrefetchCallback callback = NULL;
+    void *context = NULL;
+
+    interface_lock_exclusive(&audioPlayer->mPrefetchStatus);
+    if (audioPlayer->mPrefetchStatus.mStatus != status) {
+        audioPlayer->mPrefetchStatus.mStatus = status;
+        if (audioPlayer->mPrefetchStatus.mCallbackEventsMask & SL_PREFETCHEVENT_STATUSCHANGE) {
+            callback = audioPlayer->mPrefetchStatus.mCallback;
+            context = audioPlayer->mPrefetchStatus.mContext;
+        }
+    }
+    interface_unlock_exclusive(&audioPlayer->mPrefetchStatus);
+
+    if (NULL != callback) {
+        (*callback)(&audioPlayer->mPrefetchStatus.mItf, context, SL_PREFETCHEVENT_STATUSCHANGE);
+    }
+}
+
+
+static void sndfile_update_prefetch_fill_level(CAudioPlayer *audioPlayer, SLpermille level)
+{
+    slPrefetchCallback callback = NULL;
+    void *context = NULL;
+
+    interface_lock_exclusive(&audioPlayer->mPrefetchStatus);
+    SLpermille oldLevel = audioPlayer->mPrefetchStatus.mLevel;
+    SLpermille updatePeriod = audioPlayer->mPrefetchStatus.mFillUpdatePeriod;
+    audioPlayer->mPrefetchStatus.mLevel = level;
+    if ((oldLevel != level) &&
+            (audioPlayer->mPrefetchStatus.mCallbackEventsMask & SL_PREFETCHEVENT_FILLLEVELCHANGE)) {
+        SLpermille delta = (oldLevel > level) ? (oldLevel - level) : (level - oldLevel);
+        if ((delta >= updatePeriod) || (0 == oldLevel) || (0 == level) ||
+                (1000 == oldLevel) || (1000 == level)) {
+            callback = audioPlayer->mPrefetchStatus.mCallback;
+            context = audioPlayer->mPrefetchStatus.mContext;
+        }
+    }
+    interface_unlock_exclusive(&audioPlayer->mPrefetchStatus);
+
+    if (NULL != callback) {
+        (*callback)(&audioPlayer->mPrefetchStatus.mItf, context,
+            SL_PREFETCHEVENT_FILLLEVELCHANGE);
+    }
+}
+
+
 /** \brief Called by SndFile.c:audioPlayerTransportUpdate after a play state change or seek,
  *  and by IOutputMixExt::FillBuffer after each buffer is consumed.
  */
@@ -77,15 +137,27 @@ void SndFile_Callback(SLBufferQueueItf caller, void *pContext)
         SLuint32 size = (SLuint32) (count * sizeof(short));
         result = IBufferQueue_Enqueue(caller, pBuffer, size);
         // not much we can do if the Enqueue fails, so we'll just drop the decoded data
-        if (SL_RESULT_SUCCESS != result) {
+        if (SL_RESULT_SUCCESS == result) {
+            object_lock_exclusive(&thisAP->mObject);
+            SLuint32 queuedBufferCount = thisAP->mBufferQueue.mState.count;
+            SLuint16 totalBuffers = thisAP->mBufferQueue.mNumBuffers;
+            object_unlock_exclusive(&thisAP->mObject);
+            sndfile_update_prefetch_status(thisAP, SL_PREFETCHSTATUS_SUFFICIENTDATA);
+            sndfile_update_prefetch_fill_level(thisAP,
+                sndfile_compute_fill_level(queuedBufferCount, totalBuffers));
+        } else {
             SL_LOGE("enqueue failed 0x%lx", result);
         }
     } else {
+        SLuint32 queuedBufferCount = thisAP->mBufferQueue.mState.count;
+        SLuint16 totalBuffers = thisAP->mBufferQueue.mNumBuffers;
         thisAP->mPlay.mState = SL_PLAYSTATE_PAUSED;
         this->mEOF = SL_BOOLEAN_TRUE;
         // this would result in a non-monotonically increasing position, so don't do it
         // thisAP->mPlay.mPosition = thisAP->mPlay.mDuration;
         object_unlock_exclusive_attributes(&thisAP->mObject, ATTR_PLAYSTATE);
+        sndfile_update_prefetch_fill_level(thisAP,
+            sndfile_compute_fill_level(queuedBufferCount, totalBuffers));
     }
     // callbacks are called with mutex unlocked
     if (NULL != callback) {
@@ -185,8 +257,6 @@ void audioPlayerTransportUpdate(CAudioPlayer *audioPlayer)
 
         object_lock_exclusive(&audioPlayer->mObject);
         SLboolean empty = 0 == audioPlayer->mBufferQueue.mState.count;
-        // FIXME a made-up number that should depend on player state and prefetch status
-        audioPlayer->mPrefetchStatus.mLevel = 1000;
         SLmillisecond pos = audioPlayer->mSeek.mPos;
         if (SL_TIME_UNKNOWN != pos) {
             audioPlayer->mSeek.mPos = SL_TIME_UNKNOWN;
@@ -206,6 +276,7 @@ void audioPlayerTransportUpdate(CAudioPlayer *audioPlayer)
             // discard any enqueued buffers for the old position
             IBufferQueue_Clear(&audioPlayer->mBufferQueue.mItf);
             empty = SL_BOOLEAN_TRUE;
+            sndfile_update_prefetch_fill_level(audioPlayer, 0);
 
             pthread_mutex_lock(&audioPlayer->mSndFile.mMutex);
             // FIXME why void?
@@ -249,7 +320,8 @@ SLresult SndFile_Realize(CAudioPlayer *this)
             SLBufferQueueItf bufferQueue = &this->mBufferQueue.mItf;
             IBufferQueue *thisBQ = (IBufferQueue *) bufferQueue;
             IBufferQueue_RegisterCallback(&thisBQ->mItf, SndFile_Callback, this);
-            this->mPrefetchStatus.mStatus = SL_PREFETCHSTATUS_SUFFICIENTDATA;
+            this->mPrefetchStatus.mStatus = SL_PREFETCHSTATUS_UNDERFLOW;
+            this->mPrefetchStatus.mLevel = 0;
             // this is the initial duration; will update when a new maximum position is detected
             this->mPlay.mDuration = (SLmillisecond) (((long long) this->mSndFile.mSfInfo.frames *
                 1000LL) / this->mSndFile.mSfInfo.samplerate);
