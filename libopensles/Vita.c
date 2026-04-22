@@ -35,6 +35,18 @@ static SceUID audio_thread_handle = -1;
 
 uint8_t audio_buffers[SndFile_NUMBUFS][SndFile_BUFSIZE];
 
+static void reset_audio_backend_state(void) {
+	audio_shutdown_requested = 1;
+	audio_thread_running = 0;
+	audio_port = -1;
+#ifdef HAVE_PTHREAD
+	audio_thread_valid = 0;
+#else
+	audio_thread_handle = -1;
+#endif
+	slEngine = NULL;
+}
+
 static int opensles_output_freq(void) {
 	return (&_opensles_user_freq != NULL && _opensles_user_freq > 0)
 						 ? _opensles_user_freq
@@ -62,6 +74,11 @@ static void *audioThread(void *arg) {
 #else
 static int audioThread(unsigned int args, void *arg) {
 #endif
+	(void)arg;
+#ifndef HAVE_PTHREAD
+	(void)args;
+#endif
+
 	int ch = sceAudioOutOpenPort(SCE_AUDIO_OUT_PORT_TYPE_BGM, SndFile_BUFSIZE / 4,
 															 opensles_output_freq(),
 															 SCE_AUDIO_OUT_MODE_STEREO);
@@ -76,13 +93,21 @@ static int audioThread(unsigned int args, void *arg) {
 
 	audio_port = ch;
 	audio_thread_running = 1;
-	sceAudioOutSetConfig(ch, -1, -1, (SceAudioOutMode)-1);
+	int res = sceAudioOutSetConfig(ch, -1, -1, (SceAudioOutMode)-1);
+	if (res < 0) {
+		SL_LOGE("Unable to configure Vita audio port %d: 0x%x", ch, res);
+		goto exit_thread;
+	}
 
 	int vol_stereo[] = {32767, 32767};
-	sceAudioOutSetVolume(
+	res = sceAudioOutSetVolume(
 			ch,
 			(SceAudioOutChannelFlag)(SCE_AUDIO_VOLUME_FLAG_L_CH | SCE_AUDIO_VOLUME_FLAG_R_CH),
 			vol_stereo);
+	if (res < 0) {
+		SL_LOGE("Unable to set Vita audio volume on port %d: 0x%x", ch, res);
+		goto exit_thread;
+	}
 
 	int buf_idx = 0;
 
@@ -91,9 +116,14 @@ static int audioThread(unsigned int args, void *arg) {
 		buf_idx = (buf_idx + 1) % SndFile_NUMBUFS;
 
 		fill_output_buffer(stream, (SLuint32)SndFile_BUFSIZE);
-		sceAudioOutOutput(ch, stream);
+		res = sceAudioOutOutput(ch, stream);
+		if (res < 0) {
+			SL_LOGE("Vita audio output failed on port %d: 0x%x", ch, res);
+			break;
+		}
 	}
 
+	exit_thread:
 	sceAudioOutReleasePort(ch);
 	audio_port = -1;
 	audio_thread_running = 0;
@@ -109,17 +139,33 @@ static int audioThread(unsigned int args, void *arg) {
 
 void SDL_open(IEngine *thisEngine)
 {
-        SDL_close();
+	SDL_close();
+	if (NULL == thisEngine) {
+		return;
+	}
 	slEngine = thisEngine;
-        audio_shutdown_requested = 0;
-        audio_thread_running = 0;
+	audio_shutdown_requested = 0;
+	audio_thread_running = 0;
 #ifdef HAVE_PTHREAD
 	audio_thread_valid = (0 == pthread_create(&audio_thread_handle, NULL, audioThread, NULL));
+	if (!audio_thread_valid) {
+		SL_LOGE("Unable to create OpenSLES playback thread");
+		reset_audio_backend_state();
+	}
 #else
 	audio_thread_handle = sceKernelCreateThread("OpenSLES Playback", &audioThread, 0x10000100,
                                                 0x10000, 0, 0, NULL);
-	if (audio_thread_handle >= 0) {
-		sceKernelStartThread(audio_thread_handle, 0, NULL);
+	if (audio_thread_handle < 0) {
+		SL_LOGE("Unable to create OpenSLES playback thread: 0x%x", audio_thread_handle);
+		reset_audio_backend_state();
+		return;
+	}
+
+	int res = sceKernelStartThread(audio_thread_handle, 0, NULL);
+	if (res < 0) {
+		SL_LOGE("Unable to start OpenSLES playback thread %d: 0x%x", audio_thread_handle, res);
+		sceKernelDeleteThread(audio_thread_handle);
+		reset_audio_backend_state();
 	}
 #endif
 }
