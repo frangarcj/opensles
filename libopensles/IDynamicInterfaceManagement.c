@@ -87,6 +87,7 @@ static void HandleAdd(void *self, int MPH)
 
     // mutex is locked, update state
     *interfaceStateP = state;
+    object_cond_broadcast(thisObject);
 
     // Make a copy of these, so we can call the callback with mutex unlocked
     slDynamicInterfaceManagementCallback callback = this->mCallback;
@@ -150,6 +151,7 @@ static SLresult IDynamicInterfaceManagement_AddInterface(SLDynamicInterfaceManag
                             // leave state alone
                             break;
                         }
+                        object_cond_broadcast(thisObject);
                     }
 
                 } else {
@@ -249,6 +251,7 @@ static SLresult IDynamicInterfaceManagement_RemoveInterface(
                 object_lock_exclusive(thisObject);
                 assert(INTERFACE_REMOVING == *interfaceStateP);
                 *interfaceStateP = INTERFACE_UNINITIALIZED;
+                object_cond_broadcast(thisObject);
                 }
 
                 // mutex is still locked
@@ -330,6 +333,7 @@ static void HandleResume(void *self, int MPH)
 
     // mutex is locked, update state
     *interfaceStateP = state;
+    object_cond_broadcast(thisObject);
 
     // Make a copy of these, so we can call the callback with mutex unlocked
     slDynamicInterfaceManagementCallback callback = this->mCallback;
@@ -392,6 +396,7 @@ static SLresult IDynamicInterfaceManagement_ResumeInterface(SLDynamicInterfaceMa
                             // leave state alone
                             break;
                         }
+                        object_cond_broadcast(thisObject);
                     }
 
                 } else {
