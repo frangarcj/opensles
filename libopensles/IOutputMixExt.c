@@ -52,9 +52,11 @@ static SLboolean track_check(Track *track)
 
         // track is initialized
 
-        // FIXME This lock could block and result in stuttering;
-        // a trylock with retry or lockless solution would be ideal
-        object_lock_exclusive(&audioPlayer->mObject);
+        // If the player is busy on another thread, skip this track for the current mix frame
+        // instead of stalling the whole mixer callback.
+        if (!object_trylock_exclusive(&audioPlayer->mObject)) {
+            return SL_BOOLEAN_FALSE;
+        }
         assert(audioPlayer->mTrack == track);
 
         SLuint32 framesMixed = track->mFramesMixed;
@@ -213,12 +215,10 @@ void IOutputMixExt_FillBuffer(SLOutputMixExtItf self, void *pBuffer, SLuint32 si
         void *dstWriter = pBuffer;
         unsigned desired = size;
         SLboolean trackContributedToMix = SL_BOOLEAN_FALSE;
-        float gains[STEREO_CHANNELS];
         Summary summaries[STEREO_CHANNELS];
         unsigned channel;
         for (channel = 0; channel < STEREO_CHANNELS; ++channel) {
             float gain = track->mGains[channel];
-            gains[channel] = gain;
             Summary summary;
             if (gain <= 0.001) {
                 summary = GAIN_MUTE;
