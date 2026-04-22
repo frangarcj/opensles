@@ -678,6 +678,13 @@ SLresult checkSourceFormatVsInterfacesCompatibility(const DataLocatorFormat *pDa
         }
         break;
     default:
+        for (i = 0; i < numInterfaces; i++) {
+            if (pInterfaceRequired[i] && ((SL_IID_BUFFERQUEUE == pInterfaceIds[i]) ||
+                    (SL_IID_ANDROIDSIMPLEBUFFERQUEUE == pInterfaceIds[i]))) {
+                SL_LOGE("can't request a buffer queue interface without a buffer queue data source");
+                return SL_RESULT_FEATURE_UNSUPPORTED;
+            }
+        }
         break;
     }
     return SL_RESULT_SUCCESS;
