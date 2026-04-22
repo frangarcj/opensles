@@ -33,6 +33,7 @@ SLresult CEngine_Realize(void *self, SLboolean async)
     result = ThreadPool_init(&this->mEngine.mThreadPool, 0, 0);
     if (SL_RESULT_SUCCESS != result) {
         this->mEngine.mShutdown = SL_BOOLEAN_TRUE;
+        object_cond_broadcast(&this->mObject);
         (void) pthread_join(this->mSyncThread, (void **) NULL);
         return result;
     }
@@ -79,6 +80,7 @@ void CEngine_Destroy(void *self)
 
         // Announce to the sync thread that engine is shutting down; it polls so should see it soon
         this->mEngine.mShutdown = SL_BOOLEAN_TRUE;
+        object_cond_broadcast(&this->mObject);
         // Wait for the sync thread to acknowledge the shutdown
         while (!this->mEngine.mShutdownAck) {
             object_cond_wait(&this->mObject);
