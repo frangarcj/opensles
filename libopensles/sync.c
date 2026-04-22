@@ -97,6 +97,10 @@ void *sync_start(void *arg)
                     CAudioPlayer *audioPlayer = (CAudioPlayer *) instance;
                     audioPlayerTransportUpdate(audioPlayer);
                 }
+                if (attributesMask & ATTR_SNDREFILL) {
+                    CAudioPlayer *audioPlayer = (CAudioPlayer *) instance;
+                    audioPlayerRefillBuffers(audioPlayer);
+                }
 #endif
                 break;
 

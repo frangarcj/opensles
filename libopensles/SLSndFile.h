@@ -19,6 +19,7 @@
 extern void SLAPIENTRY SndFile_Callback(SLBufferQueueItf caller, void *pContext);
 extern SLboolean SndFile_IsSupported(const SF_INFO *sfinfo);
 extern SLresult SndFile_checkAudioPlayerSourceSink(CAudioPlayer *this_);
+extern void audioPlayerRefillBuffers(CAudioPlayer *this);
 extern void audioPlayerTransportUpdate(CAudioPlayer *this);
 extern SLresult SndFile_Realize(CAudioPlayer *this);
 extern void SndFile_Destroy(CAudioPlayer *this);

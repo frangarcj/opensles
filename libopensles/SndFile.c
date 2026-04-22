@@ -79,6 +79,66 @@ static void sndfile_update_prefetch_fill_level(CAudioPlayer *audioPlayer, SLperm
 }
 
 
+void audioPlayerRefillBuffers(CAudioPlayer *audioPlayer)
+{
+    struct SndFile *this = &audioPlayer->mSndFile;
+
+    if (NULL == this->mSNDFILE) {
+        return;
+    }
+
+    for (;;) {
+        object_lock_exclusive(&audioPlayer->mObject);
+        SLuint32 queuedBufferCount = audioPlayer->mBufferQueue.mState.count;
+        SLuint16 totalBuffers = audioPlayer->mBufferQueue.mNumBuffers;
+        SLuint32 state = audioPlayer->mPlay.mState;
+        object_unlock_exclusive(&audioPlayer->mObject);
+
+        sndfile_update_prefetch_fill_level(audioPlayer,
+            sndfile_compute_fill_level(queuedBufferCount, totalBuffers));
+
+        if ((SL_PLAYSTATE_PLAYING != state) || (queuedBufferCount >= totalBuffers)) {
+            return;
+        }
+
+        pthread_mutex_lock(&this->mMutex);
+        if (this->mEOF) {
+            pthread_mutex_unlock(&this->mMutex);
+            return;
+        }
+
+        short *pBuffer = &this->mBuffer[this->mWhich * SndFile_BUFSIZE];
+        if (++this->mWhich >= SndFile_NUMBUFS) {
+            this->mWhich = 0;
+        }
+
+        sf_count_t count = sf_read_short(this->mSNDFILE, pBuffer, (sf_count_t) SndFile_BUFSIZE);
+        pthread_mutex_unlock(&this->mMutex);
+
+        if (0 < count) {
+            SLresult result = IBufferQueue_Enqueue(&audioPlayer->mBufferQueue.mItf, pBuffer,
+                (SLuint32) (count * sizeof(short)));
+            if (SL_RESULT_SUCCESS != result) {
+                SL_LOGE("enqueue failed 0x%lx", result);
+                return;
+            }
+            sndfile_update_prefetch_status(audioPlayer, SL_PREFETCHSTATUS_SUFFICIENTDATA);
+            continue;
+        }
+
+        object_lock_exclusive(&audioPlayer->mObject);
+        queuedBufferCount = audioPlayer->mBufferQueue.mState.count;
+        totalBuffers = audioPlayer->mBufferQueue.mNumBuffers;
+        audioPlayer->mPlay.mState = SL_PLAYSTATE_PAUSED;
+        this->mEOF = SL_BOOLEAN_TRUE;
+        object_unlock_exclusive_attributes(&audioPlayer->mObject, ATTR_PLAYSTATE);
+        sndfile_update_prefetch_fill_level(audioPlayer,
+            sndfile_compute_fill_level(queuedBufferCount, totalBuffers));
+        return;
+    }
+}
+
+
 /** \brief Called by SndFile.c:audioPlayerTransportUpdate after a play state change or seek,
  *  and by IOutputMixExt::FillBuffer after each buffer is consumed.
  */
@@ -86,30 +146,16 @@ static void sndfile_update_prefetch_fill_level(CAudioPlayer *audioPlayer, SLperm
 void SndFile_Callback(SLBufferQueueItf caller, void *pContext)
 {
     CAudioPlayer *thisAP = (CAudioPlayer *) pContext;
-    object_lock_peek(&thisAP->mObject);
-    SLuint32 state = thisAP->mPlay.mState;
-    object_unlock_peek(&thisAP->mObject);
-    if (SL_PLAYSTATE_PLAYING != state) {
-        return;
-    }
-    struct SndFile *this = &thisAP->mSndFile;
-    SLresult result;
-    pthread_mutex_lock(&this->mMutex);
-    if (this->mEOF) {
-        pthread_mutex_unlock(&this->mMutex);
-        return;
-    }
-    short *pBuffer = &this->mBuffer[this->mWhich * SndFile_BUFSIZE];
-    if (++this->mWhich >= SndFile_NUMBUFS) {
-        this->mWhich = 0;
-    }
-    sf_count_t count;
-    count = sf_read_short(this->mSNDFILE, pBuffer, (sf_count_t) SndFile_BUFSIZE);
-    pthread_mutex_unlock(&this->mMutex);
     bool headAtNewPos = false;
     object_lock_exclusive(&thisAP->mObject);
+    if (SL_PLAYSTATE_PLAYING != thisAP->mPlay.mState) {
+        object_unlock_exclusive(&thisAP->mObject);
+        return;
+    }
     slPlayCallback callback = thisAP->mPlay.mCallback;
     void *context = thisAP->mPlay.mContext;
+    SLuint32 queuedBufferCount = thisAP->mBufferQueue.mState.count;
+    SLuint16 totalBuffers = thisAP->mBufferQueue.mNumBuffers;
     // make a copy of sample rate so we are absolutely sure we will not divide by zero
     SLuint32 sampleRateMilliHz = thisAP->mSampleRateMilliHz;
     if (0 != sampleRateMilliHz) {
@@ -132,33 +178,9 @@ void SndFile_Callback(SLBufferQueueItf caller, void *pContext)
             headAtNewPos = true;
         }
     }
-    if (0 < count) {
-        object_unlock_exclusive(&thisAP->mObject);
-        SLuint32 size = (SLuint32) (count * sizeof(short));
-        result = IBufferQueue_Enqueue(caller, pBuffer, size);
-        // not much we can do if the Enqueue fails, so we'll just drop the decoded data
-        if (SL_RESULT_SUCCESS == result) {
-            object_lock_exclusive(&thisAP->mObject);
-            SLuint32 queuedBufferCount = thisAP->mBufferQueue.mState.count;
-            SLuint16 totalBuffers = thisAP->mBufferQueue.mNumBuffers;
-            object_unlock_exclusive(&thisAP->mObject);
-            sndfile_update_prefetch_status(thisAP, SL_PREFETCHSTATUS_SUFFICIENTDATA);
-            sndfile_update_prefetch_fill_level(thisAP,
-                sndfile_compute_fill_level(queuedBufferCount, totalBuffers));
-        } else {
-            SL_LOGE("enqueue failed 0x%lx", result);
-        }
-    } else {
-        SLuint32 queuedBufferCount = thisAP->mBufferQueue.mState.count;
-        SLuint16 totalBuffers = thisAP->mBufferQueue.mNumBuffers;
-        thisAP->mPlay.mState = SL_PLAYSTATE_PAUSED;
-        this->mEOF = SL_BOOLEAN_TRUE;
-        // this would result in a non-monotonically increasing position, so don't do it
-        // thisAP->mPlay.mPosition = thisAP->mPlay.mDuration;
-        object_unlock_exclusive_attributes(&thisAP->mObject, ATTR_PLAYSTATE);
-        sndfile_update_prefetch_fill_level(thisAP,
-            sndfile_compute_fill_level(queuedBufferCount, totalBuffers));
-    }
+    object_unlock_exclusive_attributes(&thisAP->mObject, ATTR_SNDREFILL);
+    sndfile_update_prefetch_fill_level(thisAP,
+        sndfile_compute_fill_level(queuedBufferCount, totalBuffers));
     // callbacks are called with mutex unlocked
     if (NULL != callback) {
         if (headAtNewPos) {
@@ -300,7 +322,7 @@ void audioPlayerTransportUpdate(CAudioPlayer *audioPlayer)
 
         if (empty && ((SL_TIME_UNKNOWN != pos) ||
             (SL_PLAYSTATE_PLAYING == audioPlayer->mPlay.mState))) {
-            SndFile_Callback(&audioPlayer->mBufferQueue.mItf, audioPlayer);
+            audioPlayerRefillBuffers(audioPlayer);
         }
 
     }
