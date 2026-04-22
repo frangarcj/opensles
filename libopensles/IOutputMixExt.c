@@ -70,6 +70,7 @@ static SLboolean track_check(Track *track)
         if (audioPlayer->mBufferQueue.mClearRequested) {
             // application thread(s) that call BufferQueue::Clear while mixer is active
             // will block synchronously until mixer acknowledges the Clear request
+            IBufferQueue_ReleaseArrayBuffers(&audioPlayer->mBufferQueue);
             audioPlayer->mBufferQueue.mFront = &audioPlayer->mBufferQueue.mArray[0];
             audioPlayer->mBufferQueue.mRear = &audioPlayer->mBufferQueue.mArray[0];
             audioPlayer->mBufferQueue.mState.count = 0;
@@ -284,6 +285,7 @@ void IOutputMixExt_FillBuffer(SLOutputMixExtItf self, void *pBuffer, SLuint32 si
                     if (++newFront == &bufferQueue->mArray[bufferQueue->mNumBuffers + 1]) {
                         newFront = bufferQueue->mArray;
                     }
+                    BufferHeader_release((BufferHeader *) oldFront);
                     bufferQueue->mFront = (BufferHeader *) newFront;
                     assert(0 < bufferQueue->mState.count);
                     --bufferQueue->mState.count;

@@ -28,13 +28,7 @@
 #include <errno.h>
 
 #ifndef __cplusplus
-typedef int bool;
-#ifndef false
-#define false 0
-#endif
-#ifndef true
-#define true 1
-#endif
+#include <stdbool.h>
 #endif
 
 // The OpenSLES.h definitions of SL_PROFILES_... have casts, so are unusable by preprocessor
@@ -212,7 +206,23 @@ typedef struct {
 typedef struct {
     const void *mBuffer;
     SLuint32 mSize;
+    void *mOwnedBuffer;
 } BufferHeader;
+
+static inline void BufferHeader_reset(BufferHeader *header)
+{
+    header->mBuffer = NULL;
+    header->mSize = 0;
+    header->mOwnedBuffer = NULL;
+}
+
+static inline void BufferHeader_release(BufferHeader *header)
+{
+    if (NULL != header->mOwnedBuffer) {
+        free(header->mOwnedBuffer);
+    }
+    BufferHeader_reset(header);
+}
 
 #ifdef __cplusplus
 #define this this_
@@ -1337,6 +1347,7 @@ extern SLresult IBufferQueue_Clear(SLBufferQueueItf self);
 extern SLresult IBufferQueue_RegisterCallback(SLBufferQueueItf self,
     slBufferQueueCallback callback, void *pContext);
 extern void IBufferQueue_Destroy(IBufferQueue *this);
+extern void IBufferQueue_ReleaseArrayBuffers(IBufferQueue *this);
 
 extern bool IsInterfaceInitialized(IObject *this, unsigned MPH);
 extern SLresult AcquireStrongRef(IObject *object, SLuint32 expectedObjectID);
