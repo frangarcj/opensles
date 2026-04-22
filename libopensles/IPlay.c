@@ -50,7 +50,7 @@ static SLresult IPlay_SetPlayState(SLPlayItf self, SLuint32 state)
 
             case (SL_PLAYSTATE_STOPPED  << 2) | SL_PLAYSTATE_PLAYING:
             case (SL_PLAYSTATE_PAUSED   << 2) | SL_PLAYSTATE_PLAYING:
-                attr = ATTR_TRANSPORT;
+                attr = ATTR_PLAYSTATE;
                 // set enqueue attribute if queue is non-empty and state becomes PLAYING
                 if ((NULL != audioPlayer) && (audioPlayer->mBufferQueue.mFront !=
                     audioPlayer->mBufferQueue.mRear)) {
@@ -92,7 +92,7 @@ static SLresult IPlay_SetPlayState(SLPlayItf self, SLuint32 state)
 #else
         // Here life looks easy for an Android, but there are other troubles in play land
         this->mState = state;
-        attr = ATTR_TRANSPORT;
+    attr = ATTR_PLAYSTATE;
 #endif
         interface_unlock_exclusive_attributes(this, attr);
         }
@@ -286,7 +286,7 @@ static SLresult IPlay_SetMarkerPosition(SLPlayItf self, SLmillisecond mSec)
     interface_lock_exclusive(this);
     if (this->mMarkerPosition != mSec) {
         this->mMarkerPosition = mSec;
-        interface_unlock_exclusive_attributes(this, ATTR_TRANSPORT);
+        interface_unlock_exclusive_attributes(this, ATTR_PLAYSTATE);
     } else
         interface_unlock_exclusive(this);
     result = SL_RESULT_SUCCESS;

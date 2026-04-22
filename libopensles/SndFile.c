@@ -85,7 +85,7 @@ void SndFile_Callback(SLBufferQueueItf caller, void *pContext)
         this->mEOF = SL_BOOLEAN_TRUE;
         // this would result in a non-monotonically increasing position, so don't do it
         // thisAP->mPlay.mPosition = thisAP->mPlay.mDuration;
-        object_unlock_exclusive_attributes(&thisAP->mObject, ATTR_TRANSPORT);
+        object_unlock_exclusive_attributes(&thisAP->mObject, ATTR_PLAYSTATE);
     }
     // callbacks are called with mutex unlocked
     if (NULL != callback) {
@@ -217,8 +217,8 @@ void audioPlayerTransportUpdate(CAudioPlayer *audioPlayer)
 
         }
 
-        // FIXME only on seek or play state change (STOPPED, PAUSED) -> PLAYING
-        if (empty) {
+        if (empty && ((SL_TIME_UNKNOWN != pos) ||
+            (SL_PLAYSTATE_PLAYING == audioPlayer->mPlay.mState))) {
             SndFile_Callback(&audioPlayer->mBufferQueue.mItf, audioPlayer);
         }
 
