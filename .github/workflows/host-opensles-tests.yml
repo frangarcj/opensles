@@ -42,6 +42,9 @@ jobs:
           make run-slowdown
           make run-urimime-host
           make run-srcsink-host
+          make run-engine-host
+          make run-object-host
+          make run-configbq-host
 
       - name: Run object-limit pressure tests
         working-directory: tests/host
