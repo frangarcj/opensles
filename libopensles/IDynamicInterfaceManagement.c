@@ -130,6 +130,21 @@ static SLresult IDynamicInterfaceManagement_AddInterface(SLDynamicInterfaceManag
             switch (*interfaceStateP) {
 
             case INTERFACE_UNINITIALIZED:   // normal case
+                if ((SL_OBJECTID_OUTPUTMIX == class__->mObjectID) &&
+                        ((MPH_ENVIRONMENTALREVERB == MPH) || (MPH_PRESETREVERB == MPH))) {
+                    unsigned exposedMask = 0;
+                    SLuint32 i;
+                    for (i = 0; i < class__->mInterfaceCount; ++i) {
+                        if (INTERFACE_UNINITIALIZED != thisObject->mInterfaceStates[i] ||
+                                (i == (SLuint32) index)) {
+                            exposedMask |= 1u << i;
+                        }
+                    }
+                    result = CheckOutputMixReverbCompatibility(class__, exposedMask);
+                    if (SL_RESULT_SUCCESS != result) {
+                        break;
+                    }
+                }
                 if (async) {
                     // Asynchronous: mark operation pending and cancellable
                     *interfaceStateP = INTERFACE_ADDING_1;

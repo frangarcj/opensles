@@ -24,6 +24,7 @@ OBJS       = OpenSLESUT.o             \
         IBufferQueue.o                \
         IEffectSend.o                 \
         IEngine.o                     \
+        IDynamicInterfaceManagement.o \
         IEnvironmentalReverb.o        \
         IEqualizer.o                  \
         IMuteSolo.o                   \

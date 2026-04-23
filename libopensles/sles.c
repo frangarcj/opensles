@@ -49,6 +49,22 @@ bool IsInterfaceInitialized(IObject *this, unsigned MPH)
 }
 
 
+SLresult CheckOutputMixReverbCompatibility(const ClassTable *class__, unsigned exposedMask)
+{
+    if (SL_OBJECTID_OUTPUTMIX == class__->mObjectID) {
+        int environmentalReverbIndex = class__->mMPH_to_index[MPH_ENVIRONMENTALREVERB];
+        int presetReverbIndex = class__->mMPH_to_index[MPH_PRESETREVERB];
+        if ((0 <= environmentalReverbIndex) && (0 <= presetReverbIndex) &&
+                (exposedMask & (1u << environmentalReverbIndex)) &&
+                (exposedMask & (1u << presetReverbIndex))) {
+            SL_LOGE("can't expose EnvironmentalReverb and PresetReverb on the same output mix");
+            return SL_RESULT_FEATURE_UNSUPPORTED;
+        }
+    }
+    return SL_RESULT_SUCCESS;
+}
+
+
 /** \brief Map an IObject to it's "object ID" (which is really a class ID) */
 
 SLuint32 IObjectToObjectID(IObject *this)
@@ -198,6 +214,10 @@ SLresult checkInterfaces(const ClassTable *class__, SLuint32 numInterfaces,
             exposedMask |= (1 << index);
             // Note that we ignore duplicate requests, including equal and aliased IDs
         }
+    }
+    SLresult result = CheckOutputMixReverbCompatibility(class__, exposedMask);
+    if (SL_RESULT_SUCCESS != result) {
+        return result;
     }
     *pExposedMask = exposedMask;
     return SL_RESULT_SUCCESS;
