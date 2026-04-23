@@ -40,6 +40,18 @@ typedef enum {
 } Summary;
 
 
+static Summary summarize_gain(float gain)
+{
+    if (gain <= 0.001f) {
+        return GAIN_MUTE;
+    }
+    if (gain >= 0.999f) {
+        return GAIN_UNITY;
+    }
+    return GAIN_OTHER;
+}
+
+
 /** \brief Check whether a track has any data for us to read */
 
 static SLboolean track_check(Track *track)
@@ -181,8 +193,28 @@ void IOutputMixExt_FillBuffer(SLOutputMixExtItf self, void *pBuffer, SLuint32 si
     SLboolean mixBufferHasData = SL_BOOLEAN_FALSE;
     IOutputMixExt *this = (IOutputMixExt *) self;
     IObject *thisObject = this->mThis;
+    COutputMix *outputMix = (COutputMix *) thisObject;
+    float outputMixGains[STEREO_CHANNELS];
+    Summary outputMixSummaries[STEREO_CHANNELS];
     // This lock should never block, except when the application destroys the output mix object
     object_lock_exclusive(thisObject);
+    if (outputMix->mVolume.mMute) {
+        outputMixGains[0] = 0.0f;
+        outputMixGains[1] = 0.0f;
+    } else {
+        float mixGain = powf(10.0f, outputMix->mVolume.mLevel / 2000.0f);
+        outputMixGains[0] = mixGain;
+        outputMixGains[1] = mixGain;
+        if (outputMix->mVolume.mEnableStereoPosition) {
+            if (outputMix->mVolume.mStereoPosition > 0) {
+                outputMixGains[0] *= (1000 - outputMix->mVolume.mStereoPosition) / 1000.0f;
+            } else if (outputMix->mVolume.mStereoPosition < 0) {
+                outputMixGains[1] *= (1000 + outputMix->mVolume.mStereoPosition) / 1000.0f;
+            }
+        }
+    }
+    outputMixSummaries[0] = summarize_gain(outputMixGains[0]);
+    outputMixSummaries[1] = summarize_gain(outputMixGains[1]);
     unsigned activeMask;
     // If the output mix is marked for destruction, then acknowledge the request
     if (this->mDestroyRequested) {
@@ -219,15 +251,7 @@ void IOutputMixExt_FillBuffer(SLOutputMixExtItf self, void *pBuffer, SLuint32 si
         unsigned channel;
         for (channel = 0; channel < STEREO_CHANNELS; ++channel) {
             float gain = track->mGains[channel];
-            Summary summary;
-            if (gain <= 0.001) {
-                summary = GAIN_MUTE;
-            } else if (gain >= 0.999) {
-                summary = GAIN_UNITY;
-            } else {
-                summary = GAIN_OTHER;
-            }
-            summaries[channel] = summary;
+            summaries[channel] = summarize_gain(gain);
         }
         while (desired > 0) {
             unsigned actual = desired;
@@ -328,6 +352,18 @@ void IOutputMixExt_FillBuffer(SLOutputMixExtItf self, void *pBuffer, SLuint32 si
         }
     }
     object_unlock_exclusive(thisObject);
+    if (mixBufferHasData) {
+        if ((GAIN_MUTE == outputMixSummaries[0]) && (GAIN_MUTE == outputMixSummaries[1])) {
+            memset(pBuffer, 0, size);
+        } else if ((GAIN_UNITY != outputMixSummaries[0]) || (GAIN_UNITY != outputMixSummaries[1])) {
+            stereo *mixBuffer = (stereo *) pBuffer;
+            unsigned j;
+            for (j = 0; j < size; j += sizeof(stereo), ++mixBuffer) {
+                mixBuffer->left = (short) (mixBuffer->left * outputMixGains[0]);
+                mixBuffer->right = (short) (mixBuffer->right * outputMixGains[1]);
+            }
+        }
+    }
     // No active tracks, so output silence
     if (!mixBufferHasData) {
         memset(pBuffer, 0, size);

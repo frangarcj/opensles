@@ -168,8 +168,7 @@ void object_unlock_exclusive_attributes(IObject *this, unsigned attributes)
 #endif
             break;
         case SL_OBJECTID_OUTPUTMIX:
-            // FIXME update gains on all players attached to this outputmix
-            SL_LOGD("[ FIXME: gain update on an SL_OBJECTID_OUTPUTMIX to be implemented ]");
+            attributes &= ~ATTR_GAIN;   // mixer reads OutputMix gain directly when mixing
             break;
         case SL_OBJECTID_MIDIPLAYER:
             // MIDI
