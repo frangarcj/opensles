@@ -1,0 +1,48 @@
+name: OpenSLES Host Tests
+
+on:
+  push:
+    paths:
+      - 'libopensles/**'
+      - 'include/**'
+      - 'tests/**'
+      - '.github/workflows/host-opensles-tests.yml'
+  pull_request:
+    paths:
+      - 'libopensles/**'
+      - 'include/**'
+      - 'tests/**'
+      - '.github/workflows/host-opensles-tests.yml'
+
+jobs:
+  host-tests:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential pkg-config libsdl2-dev libsndfile1-dev sox
+
+      - name: Build host test binaries
+        working-directory: tests/host
+        run: make -j"$(nproc)"
+
+      - name: Run URI and state tests
+        working-directory: tests/host
+        run: |
+          make run-playstates
+          make run-playuri2
+          make run-getposition
+          make run-loopuri
+          make run-playuri
+          make run-slowdown
+
+      - name: Run object-limit pressure tests
+        working-directory: tests/host
+        run: |
+          make run-manyplayers
+          make run-churn
