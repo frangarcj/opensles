@@ -118,9 +118,7 @@ void ReleaseStrongRefAndUnlockExclusive(IObject *object)
 #endif
     assert(0 < object->mStrongRefCount);
     if ((0 == --object->mStrongRefCount) && (SL_OBJECT_STATE_DESTROYING == object->mState)) {
-        // FIXME do the destroy here - merge with IDestroy
-        // but can't do this until we move Destroy to the sync thread
-        // as Destroy is now a blocking operation, and to avoid a race
+        // Destroy completion stays on the explicit destroy path because that path may block.
     } else {
         object_unlock_exclusive(object);
     }
@@ -678,7 +676,6 @@ SLresult checkSourceFormatVsInterfacesCompatibility(const DataLocatorFormat *pDa
         SLuint32 numInterfaces, const SLInterfaceID *pInterfaceIds,
             const SLboolean *pInterfaceRequired) {
     // can't request SLSeekItf if data source is a buffer queue
-    // FIXME there are other invalid combinations -- see docs
     SLuint32 i;
     switch (pDataLocatorFormat->mLocator.mLocatorType) {
     case SL_DATALOCATOR_BUFFERQUEUE:

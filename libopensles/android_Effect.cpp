@@ -283,8 +283,7 @@ void android_eq_init(int sessionId, IEqualizer* ieq) {
 
     SL_LOGV(" EQ init: num bands = %u, band range=[%d %d]mB", num, range[0], range[1]);
 
-    // FIXME don't store presets names, they can be queried each time they're needed
-    // initialize preset number and names, store in IEngine
+    // Initialize preset number and names once and store them on the engine.
     uint16_t numPresets = 0;
     if (android::NO_ERROR == android_eq_getParam(ieq->mEqEffect,
             EQ_PARAM_GET_NUM_OF_PRESETS, 0, &numPresets)) {

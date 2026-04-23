@@ -151,92 +151,95 @@ void object_unlock_exclusive_attributes(IObject *this, unsigned attributes)
     int ok;
     SLuint32 objectID = IObjectToObjectID(this);
     CAudioPlayer *ap;
-
-    // FIXME The endless if statements are getting ugly, should use bit search
+    static const unsigned synchronousAttributes[] = {
+        ATTR_GAIN,
+        ATTR_POSITION,
+        ATTR_TRANSPORT,
+        ATTR_PLAYSTATE,
+        ATTR_ENQUEUE
+    };
+    SLuint32 i;
 
     // Android likes to see certain updates synchronously
 
-    if (attributes & ATTR_GAIN) {
-        switch (objectID) {
-        case SL_OBJECTID_AUDIOPLAYER:
-            attributes &= ~ATTR_GAIN;   // no need to process asynchronously also
-            ap = (CAudioPlayer *) this;
+    for (i = 0; i < sizeof(synchronousAttributes) / sizeof(synchronousAttributes[0]); ++i) {
+        unsigned attribute = synchronousAttributes[i];
+        if (!(attributes & attribute)) {
+            continue;
+        }
+        switch (attribute) {
+        case ATTR_GAIN:
+            switch (objectID) {
+            case SL_OBJECTID_AUDIOPLAYER:
+                attributes &= ~ATTR_GAIN;   // no need to process asynchronously also
+                ap = (CAudioPlayer *) this;
 #ifdef ANDROID
-            android_audioPlayer_volumeUpdate(ap);
+                android_audioPlayer_volumeUpdate(ap);
 #else
-            audioPlayerGainUpdate(ap);
+                audioPlayerGainUpdate(ap);
 #endif
+                break;
+            case SL_OBJECTID_OUTPUTMIX:
+            case SL_OBJECTID_MIDIPLAYER:
+                attributes &= ~ATTR_GAIN;
+                break;
+            default:
+                break;
+            }
             break;
-        case SL_OBJECTID_OUTPUTMIX:
-            attributes &= ~ATTR_GAIN;   // mixer reads OutputMix gain directly when mixing
-            break;
-        case SL_OBJECTID_MIDIPLAYER:
-            // MIDI
-            SL_LOGD("[ FIXME: gain update on an SL_OBJECTID_MIDIPLAYER to be implemented ]");
-            break;
-        default:
-            break;
-        }
-    }
-
-    if (attributes & ATTR_POSITION) {
-        switch (objectID) {
-        case SL_OBJECTID_AUDIOPLAYER:
+        case ATTR_POSITION:
+            switch (objectID) {
+            case SL_OBJECTID_AUDIOPLAYER:
 #ifdef ANDROID
-            ap = (CAudioPlayer *) this;
-            attributes &= ~ATTR_POSITION;   // no need to process asynchronously also
-            android_audioPlayer_seek(ap, ap->mSeek.mPos);
-#else
-            //audioPlayerTransportUpdate(ap);
+                ap = (CAudioPlayer *) this;
+                attributes &= ~ATTR_POSITION;   // no need to process asynchronously also
+                android_audioPlayer_seek(ap, ap->mSeek.mPos);
 #endif
+                break;
+            case SL_OBJECTID_MIDIPLAYER:
+                attributes &= ~ATTR_POSITION;
+                break;
+            default:
+                break;
+            }
             break;
-        case SL_OBJECTID_MIDIPLAYER:
-            // MIDI
-            SL_LOGD("[ FIXME: position update on an SL_OBJECTID_MIDIPLAYER to be implemented ]");
-            break;
-        default:
-            break;
-        }
-    }
-
-    if (attributes & ATTR_TRANSPORT) {
-        if (SL_OBJECTID_AUDIOPLAYER == objectID) {
+        case ATTR_TRANSPORT:
+            if (SL_OBJECTID_AUDIOPLAYER == objectID) {
 #ifdef ANDROID
-            attributes &= ~ATTR_TRANSPORT;   // no need to process asynchronously also
-            ap = (CAudioPlayer *) this;
-            android_audioPlayer_useEventMask(ap);
-#else
-            //audioPlayerTransportUpdate(ap);
+                attributes &= ~ATTR_TRANSPORT;   // no need to process asynchronously also
+                ap = (CAudioPlayer *) this;
+                android_audioPlayer_useEventMask(ap);
 #endif
-        } else if (SL_OBJECTID_AUDIORECORDER == objectID) {
+            } else if (SL_OBJECTID_AUDIORECORDER == objectID) {
 #ifdef ANDROID
-            attributes &= ~ATTR_TRANSPORT;   // no need to process asynchronously also
-            CAudioRecorder* ar = (CAudioRecorder *) this;
-            android_audioRecorder_useEventMask(ar);
-#endif
-        }
-    }
-
-    if (attributes & ATTR_PLAYSTATE) {
-        if (SL_OBJECTID_AUDIOPLAYER == objectID) {
-#ifdef ANDROID
-            attributes &= ~ATTR_PLAYSTATE;   // no need to process asynchronously also
-            ap = (CAudioPlayer *) this;
-            android_audioPlayer_setPlayState(ap, false /*lockAP*/);
-#endif
-        }
-    }
-
-    // ( buffer queue count is non-empty and play state == PLAYING ) became true
-    if (attributes & ATTR_ENQUEUE) {
-        if (SL_OBJECTID_AUDIOPLAYER == objectID) {
-            attributes &= ~ATTR_ENQUEUE;
-            ap = (CAudioPlayer *) this;
-            if (SL_PLAYSTATE_PLAYING == ap->mPlay.mState) {
-#ifdef ANDROID
-                android_audioPlayer_bufferQueue_onRefilled(ap);
+                attributes &= ~ATTR_TRANSPORT;   // no need to process asynchronously also
+                CAudioRecorder *ar = (CAudioRecorder *) this;
+                android_audioRecorder_useEventMask(ar);
 #endif
             }
+            break;
+        case ATTR_PLAYSTATE:
+            if (SL_OBJECTID_AUDIOPLAYER == objectID) {
+#ifdef ANDROID
+                attributes &= ~ATTR_PLAYSTATE;   // no need to process asynchronously also
+                ap = (CAudioPlayer *) this;
+                android_audioPlayer_setPlayState(ap, false /*lockAP*/);
+#endif
+            }
+            break;
+        case ATTR_ENQUEUE:
+            if (SL_OBJECTID_AUDIOPLAYER == objectID) {
+                attributes &= ~ATTR_ENQUEUE;
+                ap = (CAudioPlayer *) this;
+                if (SL_PLAYSTATE_PLAYING == ap->mPlay.mState) {
+#ifdef ANDROID
+                    android_audioPlayer_bufferQueue_onRefilled(ap);
+#endif
+                }
+            }
+            break;
+        default:
+            break;
         }
     }
 

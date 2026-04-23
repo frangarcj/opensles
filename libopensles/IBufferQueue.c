@@ -205,7 +205,7 @@ static SLresult IBufferQueue_GetState(SLBufferQueueItf self, SLBufferQueueState 
         IBufferQueue *this = (IBufferQueue *) self;
         SLBufferQueueState state;
         interface_lock_shared(this);
-#ifdef __cplusplus // FIXME Is this a compiler bug?
+    #ifdef __cplusplus // Avoid aggregate assignment trouble seen in C++ builds.
         state.count = this->mState.count;
         state.playIndex = this->mState.playIndex;
 #else

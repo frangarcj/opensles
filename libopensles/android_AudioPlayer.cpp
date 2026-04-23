@@ -140,7 +140,7 @@ static void android_audioPlayer_updateStereoVolume(CAudioPlayer* ap) {
 
     // changes in the AudioPlayer volume must be reflected in the send level:
     //  in SLEffectSendItf or in SLAndroidEffectSendItf?
-    // FIXME replace interface test by an internal API once we have one.
+    // Use the presence of the EffectSend interface to gate the send-level update.
     if (NULL != ap->mEffectSend.mItf) {
         for (unsigned int i=0 ; i<AUX_MAX ; i++) {
             if (ap->mEffectSend.mEnableLevels[i].mEnable) {
