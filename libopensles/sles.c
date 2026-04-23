@@ -664,12 +664,12 @@ SLresult checkSourceFormatVsInterfacesCompatibility(const DataLocatorFormat *pDa
     case SL_DATALOCATOR_BUFFERQUEUE:
     case SL_DATALOCATOR_ANDROIDSIMPLEBUFFERQUEUE:
         for (i = 0; i < numInterfaces; i++) {
-            // FIXME the == needs work
-            if (pInterfaceRequired[i] && (SL_IID_SEEK == pInterfaceIds[i])) {
+            int MPH = IID_to_MPH(pInterfaceIds[i]);
+            if (pInterfaceRequired[i] && (MPH_SEEK == MPH)) {
                 SL_LOGE("can't request SL_IID_SEEK with a buffer queue data source");
                 return SL_RESULT_FEATURE_UNSUPPORTED;
             }
-            if (pInterfaceRequired[i] && (SL_IID_MUTESOLO == pInterfaceIds[i]) &&
+            if (pInterfaceRequired[i] && (MPH_MUTESOLO == MPH) &&
                     (SL_DATAFORMAT_PCM == pDataLocatorFormat->mFormat.mFormatType) &&
                     (1 == pDataLocatorFormat->mFormat.mPCM.numChannels)) {
                 SL_LOGE("can't request SL_IID_MUTESOLO with a mono buffer queue data source");
@@ -679,8 +679,9 @@ SLresult checkSourceFormatVsInterfacesCompatibility(const DataLocatorFormat *pDa
         break;
     default:
         for (i = 0; i < numInterfaces; i++) {
-            if (pInterfaceRequired[i] && ((SL_IID_BUFFERQUEUE == pInterfaceIds[i]) ||
-                    (SL_IID_ANDROIDSIMPLEBUFFERQUEUE == pInterfaceIds[i]))) {
+            int MPH = IID_to_MPH(pInterfaceIds[i]);
+            if (pInterfaceRequired[i] && ((MPH_BUFFERQUEUE == MPH) ||
+                    (MPH_ANDROIDSIMPLEBUFFERQUEUE == MPH))) {
                 SL_LOGE("can't request a buffer queue interface without a buffer queue data source");
                 return SL_RESULT_FEATURE_UNSUPPORTED;
             }
