@@ -663,6 +663,10 @@ SLresult checkSourceFormatVsInterfacesCompatibility(const DataLocatorFormat *pDa
     switch (pDataLocatorFormat->mLocator.mLocatorType) {
     case SL_DATALOCATOR_BUFFERQUEUE:
     case SL_DATALOCATOR_ANDROIDSIMPLEBUFFERQUEUE:
+        if (SL_DATAFORMAT_PCM != pDataLocatorFormat->mFormat.mFormatType) {
+            SL_LOGE("buffer queue data sources require SL_DATAFORMAT_PCM");
+            return SL_RESULT_CONTENT_UNSUPPORTED;
+        }
         for (i = 0; i < numInterfaces; i++) {
             int MPH = IID_to_MPH(pInterfaceIds[i]);
             if (pInterfaceRequired[i] && (MPH_SEEK == MPH)) {
@@ -677,7 +681,17 @@ SLresult checkSourceFormatVsInterfacesCompatibility(const DataLocatorFormat *pDa
             }
         }
         break;
+    case SL_DATALOCATOR_URI:
+        if (SL_DATAFORMAT_MIME != pDataLocatorFormat->mFormat.mFormatType) {
+            SL_LOGE("URI data sources require SL_DATAFORMAT_MIME");
+            return SL_RESULT_CONTENT_UNSUPPORTED;
+        }
+        break;
     default:
+        if (SL_DATAFORMAT_MIME == pDataLocatorFormat->mFormat.mFormatType) {
+            SL_LOGE("SL_DATAFORMAT_MIME is only valid with URI data sources");
+            return SL_RESULT_CONTENT_UNSUPPORTED;
+        }
         for (i = 0; i < numInterfaces; i++) {
             int MPH = IID_to_MPH(pInterfaceIds[i]);
             if (pInterfaceRequired[i] && ((MPH_BUFFERQUEUE == MPH) ||

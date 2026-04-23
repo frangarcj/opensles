@@ -549,20 +549,12 @@ static SLresult IEngine_CreateOutputMix(SLEngineItf self, SLObjectItf *pMix, SLu
 #ifdef USE_SDL
                 IEngine *thisEngine = this->mObject.mEngine;
                 interface_lock_exclusive(thisEngine);
-                bool unpause = false;
                 if (NULL == thisEngine->mOutputMix) {
                     thisEngine->mOutputMix = this;
-                    unpause = true;
                 }
                 interface_unlock_exclusive(thisEngine);
 #endif
                 IObject_Publish(&this->mObject);
-#ifdef USE_SDL
-                /*if (unpause) {
-                    // Enable SDL_callback to be called periodically by SDL's internal thread
-                    SDL_PauseAudio(0);
-                }*/
-#endif
                 // return the new output mix object
                 *pMix = &this->mObject.mItf;
             }

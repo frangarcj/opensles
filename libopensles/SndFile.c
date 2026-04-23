@@ -248,8 +248,7 @@ SLresult SndFile_checkAudioPlayerSourceSink(CAudioPlayer *this)
             uri += 8;
         }
         switch (formatType) {
-        case SL_DATAFORMAT_NULL:    // OK to omit the data format
-        case SL_DATAFORMAT_MIME:    // we ignore a MIME type if specified
+        case SL_DATAFORMAT_MIME:    // MIME is validated centrally; only the URI matters here
             break;
         default:
             return SL_RESULT_CONTENT_UNSUPPORTED;
