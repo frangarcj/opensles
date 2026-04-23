@@ -1,0 +1,1 @@
+int _opensles_user_freq = 44100;
