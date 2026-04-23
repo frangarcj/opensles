@@ -60,9 +60,7 @@ static void fill_output_buffer(uint8_t *stream, SLuint32 size) {
 		return;
 	}
 
-	interface_lock_shared(slEngine);
 	COutputMix *outputMix = slEngine->mOutputMix;
-	interface_unlock_shared(slEngine);
 	if (NULL != outputMix) {
 		SLOutputMixExtItf OutputMixExt = &outputMix->mOutputMixExt.mItf;
 		IOutputMixExt_FillBuffer(OutputMixExt, stream, size);
@@ -124,8 +122,10 @@ static int audioThread(unsigned int args, void *arg) {
 	}
 
 	exit_thread:
-	sceAudioOutReleasePort(ch);
-	audio_port = -1;
+	if (audio_port == ch) {
+		sceAudioOutReleasePort(ch);
+		audio_port = -1;
+	}
 	audio_thread_running = 0;
 
 #ifdef HAVE_PTHREAD
@@ -176,6 +176,11 @@ void SDL_open(IEngine *thisEngine)
 void SDL_close(void)
 {
 	audio_shutdown_requested = 1;
+	slEngine = NULL;
+	if (audio_port >= 0) {
+		sceAudioOutReleasePort(audio_port);
+		audio_port = -1;
+	}
 #ifdef HAVE_PTHREAD
 	if (audio_thread_valid) {
 		pthread_join(audio_thread_handle, NULL);

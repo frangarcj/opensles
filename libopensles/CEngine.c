@@ -81,11 +81,12 @@ void CEngine_Destroy(void *self)
         // Announce to the sync thread that engine is shutting down; it polls so should see it soon
         this->mEngine.mShutdown = SL_BOOLEAN_TRUE;
         object_cond_broadcast(&this->mObject);
-        // Wait for the sync thread to acknowledge the shutdown
+        // Wait for the sync thread to acknowledge shutdown. object_cond_wait releases
+        // and re-acquires the object mutex, which allows sync_start to run and exit.
         while (!this->mEngine.mShutdownAck) {
             object_cond_wait(&this->mObject);
         }
-        // The sync thread should have exited by now, so collect it by joining
+        // The sync thread has exited, now collect it.
         (void) pthread_join(this->mSyncThread, (void **) NULL);
 
     }
@@ -111,7 +112,13 @@ void CEngine_Destroy(void *self)
 #endif
 
 #ifdef USE_SDL
+    // Stop audio mixing before backend teardown to avoid reads of objects being destroyed.
+    this->mEngine.mOutputMix = NULL;
+    // IObject_Destroy calls this hook with engine mutex locked. SDL_close joins the audio
+    // thread, which can contend on the same engine lock while leaving fill_output_buffer.
+    object_unlock_exclusive(&this->mObject);
     SDL_close();
+    object_lock_exclusive(&this->mObject);
 #endif
 
 }

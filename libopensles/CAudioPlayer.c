@@ -31,7 +31,9 @@ SLresult CAudioPlayer_Realize(void *self, SLboolean async)
 #endif
 
 #ifdef USE_SNDFILE
-    result = SndFile_Realize(this);
+    if (SL_DATALOCATOR_URI == this->mDataSource.mLocator.mLocatorType) {
+        result = SndFile_Realize(this);
+    }
 #endif
 
     // At this point the channel count and sample rate might still be unknown,

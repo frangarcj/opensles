@@ -358,7 +358,7 @@ SLresult SndFile_Realize(CAudioPlayer *this)
             assert(0 == ok);
             // URI players need internal refill/position callbacks even when the public
             // BufferQueue interface is not exposed.
-            this->mBufferQueue.mThis = this;
+            this->mBufferQueue.mThis = &this->mObject;
             this->mBufferQueue.mCallback = SndFile_Callback;
             this->mBufferQueue.mContext = this;
             this->mBufferQueue.samplerate = this->mSndFile.mSfInfo.samplerate * 1000;
