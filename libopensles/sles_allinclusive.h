@@ -1352,6 +1352,7 @@ extern void IBufferQueue_Destroy(IBufferQueue *this);
 extern void IBufferQueue_ReleaseArrayBuffers(IBufferQueue *this);
 
 extern bool IsInterfaceInitialized(IObject *this, unsigned MPH);
+extern SLresult CheckOutputMixReverbCompatibility(const ClassTable *class__, unsigned exposedMask);
 extern SLresult AcquireStrongRef(IObject *object, SLuint32 expectedObjectID);
 extern void ReleaseStrongRef(IObject *object);
 extern void ReleaseStrongRefAndUnlockExclusive(IObject *object);
