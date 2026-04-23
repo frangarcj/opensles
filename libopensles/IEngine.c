@@ -431,8 +431,6 @@ static SLresult IEngine_CreateMidiPlayer(SLEngineItf self, SLObjectItf *pPlayer,
             if (NULL == this) {
                 result = SL_RESULT_MEMORY_FAILURE;
             } else {
-                // FIXME a fake value - why not use value from IPlay_init? what does CT check for?
-                this->mPlay.mDuration = 0;
                 IObject_Publish(&this->mObject);
                 // return the new MIDI player object
                 *pPlayer = &this->mObject.mItf;
