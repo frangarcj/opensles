@@ -40,6 +40,8 @@ jobs:
           make run-loopuri
           make run-playuri
           make run-slowdown
+          make run-urimime-host
+          make run-srcsink-host
 
       - name: Run object-limit pressure tests
         working-directory: tests/host

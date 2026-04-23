@@ -4,6 +4,7 @@ LIB_BUILD_DIR := $(BUILD_DIR)/libopensles
 TEST_BUILD_DIR := $(BUILD_DIR)/tests
 STATIC_LIB := $(BUILD_DIR)/libOpenSLES-host.a
 SAMPLE_WAV := $(BUILD_DIR)/sample.wav
+HOST_ADAPTER := $(TEST_BUILD_DIR)/host_adapter.o
 
 PKG_CONFIG ?= pkg-config
 CC ?= cc
@@ -72,11 +73,13 @@ TEST_PROGRAMS := \
 	$(TEST_BUILD_DIR)/slesTestPlayUri2 \
 	$(TEST_BUILD_DIR)/slesTest_playStates \
 	$(TEST_BUILD_DIR)/slesTestManyPlayers \
-	$(TEST_BUILD_DIR)/slesTestManyPlayersChurn
+	$(TEST_BUILD_DIR)/slesTestManyPlayersChurn \
+	$(TEST_BUILD_DIR)/slesTestUriMimeHost \
+	$(TEST_BUILD_DIR)/slesTestSrcSinkHost
 
 TEST_SUPPORT := $(TEST_BUILD_DIR)/test_support.o
 
-.PHONY: all clean smoke run-loopuri run-playuri run-slowdown run-getposition run-playuri2 run-playstates run-manyplayers run-churn
+.PHONY: all clean smoke run-loopuri run-playuri run-slowdown run-getposition run-playuri2 run-playstates run-manyplayers run-churn run-urimime-host run-srcsink-host
 
 all: $(TEST_PROGRAMS)
 
@@ -92,8 +95,17 @@ $(LIB_BUILD_DIR)/%.o: $(ROOT)/libopensles/%.c | $(LIB_BUILD_DIR)
 $(TEST_BUILD_DIR)/test_support.o: $(ROOT)/tests/host/test_support.c | $(TEST_BUILD_DIR)
 	$(CC) $(CFLAGS) -c $< -o $@
 
+$(HOST_ADAPTER): $(ROOT)/tests/host/host_adapter.c | $(TEST_BUILD_DIR)
+	$(CC) $(CFLAGS) -c $< -o $@
+
 $(TEST_BUILD_DIR)/%: $(ROOT)/tests/mimeUri/%.cpp $(STATIC_LIB) $(TEST_SUPPORT) | $(TEST_BUILD_DIR)
 	$(CXX) $(CXXFLAGS) $< $(TEST_SUPPORT) $(STATIC_LIB) $(LDLIBS) -o $@
+
+$(TEST_BUILD_DIR)/slesTestUriMimeHost: $(ROOT)/tests/sandbox/slesTestUriMimeHost.c $(STATIC_LIB) $(HOST_ADAPTER) $(TEST_SUPPORT) | $(TEST_BUILD_DIR)
+	$(CC) $(CFLAGS) $< $(HOST_ADAPTER) $(TEST_SUPPORT) $(STATIC_LIB) $(LDLIBS) -o $@
+
+$(TEST_BUILD_DIR)/slesTestSrcSinkHost: $(ROOT)/tests/sandbox/slesTestSrcSinkHost.c $(STATIC_LIB) $(TEST_SUPPORT) | $(TEST_BUILD_DIR)
+	$(CC) $(CFLAGS) $< $(TEST_SUPPORT) $(STATIC_LIB) $(LDLIBS) -o $@
 
 $(SAMPLE_WAV): | $(BUILD_DIR)
 	$(SOX) -n -r 44100 -b 16 -c 2 $@ synth 4 sine 440 sine 660 vol 0.3
@@ -123,6 +135,12 @@ run-manyplayers: $(TEST_BUILD_DIR)/slesTestManyPlayers $(SAMPLE_WAV)
 
 run-churn: $(TEST_BUILD_DIR)/slesTestManyPlayersChurn $(SAMPLE_WAV)
 	SDL_AUDIODRIVER=dummy $(TEST_BUILD_DIR)/slesTestManyPlayersChurn $(abspath $(SAMPLE_WAV)) 20 5000
+
+run-urimime-host: $(TEST_BUILD_DIR)/slesTestUriMimeHost $(SAMPLE_WAV)
+	SDL_AUDIODRIVER=dummy $(TEST_BUILD_DIR)/slesTestUriMimeHost $(abspath $(SAMPLE_WAV))
+
+run-srcsink-host: $(TEST_BUILD_DIR)/slesTestSrcSinkHost
+	SDL_AUDIODRIVER=dummy $(TEST_BUILD_DIR)/slesTestSrcSinkHost
 
 clean:
 	rm -rf $(BUILD_DIR)
