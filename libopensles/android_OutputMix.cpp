@@ -73,8 +73,7 @@ SLresult android_outputMix_destroy(COutputMix *om) {
 
 
 #ifndef USE_BACKPORT
-    // FIXME this shouldn't have to be done here, there should be an "interface destroy" hook,
-    //       just like there is an interface init hook, to avoid memory leaks.
+    // Clear Android effect handles here because this build has no separate interface destroy hook.
     om->mEqualizer.mEqEffect.clear();
     om->mBassBoost.mBassBoostEffect.clear();
     om->mVirtualizer.mVirtualizerEffect.clear();

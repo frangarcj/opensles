@@ -19,6 +19,26 @@
 #include "sles_allinclusive.h"
 
 
+static SLresult IEngine_AllocateBufferQueueArray(IBufferQueue *bufferQueue)
+{
+    if (BUFFER_HEADER_TYPICAL >= bufferQueue->mNumBuffers) {
+        bufferQueue->mArray = bufferQueue->mTypical;
+    } else {
+        if (bufferQueue->mNumBuffers >= 256) {
+            return SL_RESULT_MEMORY_FAILURE;
+        }
+        bufferQueue->mArray = (BufferHeader *) malloc((bufferQueue->mNumBuffers + 1) *
+            sizeof(BufferHeader));
+        if (NULL == bufferQueue->mArray) {
+            return SL_RESULT_MEMORY_FAILURE;
+        }
+    }
+    bufferQueue->mFront = bufferQueue->mArray;
+    bufferQueue->mRear = bufferQueue->mArray;
+    return SL_RESULT_SUCCESS;
+}
+
+
 static SLresult IEngine_CreateLEDDevice(SLEngineItf self, SLObjectItf *pDevice, SLuint32 deviceID,
     SLuint32 numInterfaces, const SLInterfaceID *pInterfaceIds, const SLboolean *pInterfaceRequired)
 {
@@ -227,31 +247,10 @@ static SLresult IEngine_CreateAudioPlayer(SLEngineItf self, SLObjectItf *pPlayer
                     }
 #endif
 
-                    // FIXME move to dedicated function
-                    // Allocate memory for buffer queue
-
-                    //if (0 != this->mBufferQueue.mNumBuffers) {
-                        // inline allocation of circular mArray, up to a typical max
-                        if (BUFFER_HEADER_TYPICAL >= this->mBufferQueue.mNumBuffers) {
-                            this->mBufferQueue.mArray = this->mBufferQueue.mTypical;
-                        } else {
-                            // Avoid possible integer overflow during multiplication; this arbitrary
-                            // maximum is big enough to not interfere with real applications, but
-                            // small enough to not overflow.
-                            if (this->mBufferQueue.mNumBuffers >= 256) {
-                                result = SL_RESULT_MEMORY_FAILURE;
-                                break;
-                            }
-                            this->mBufferQueue.mArray = (BufferHeader *) malloc((this->mBufferQueue.
-                                mNumBuffers + 1) * sizeof(BufferHeader));
-                            if (NULL == this->mBufferQueue.mArray) {
-                                result = SL_RESULT_MEMORY_FAILURE;
-                                break;
-                            }
-                        }
-                        this->mBufferQueue.mFront = this->mBufferQueue.mArray;
-                        this->mBufferQueue.mRear = this->mBufferQueue.mArray;
-                        //}
+                    result = IEngine_AllocateBufferQueueArray(&this->mBufferQueue);
+                    if (SL_RESULT_SUCCESS != result) {
+                        break;
+                    }
 
                         // used to store the data source of our audio player
                         this->mDynamicSource.mDataSource = &this->mDataSource.u.mSource;
@@ -356,26 +355,10 @@ static SLresult IEngine_CreateAudioRecorder(SLEngineItf self, SLObjectItf *pReco
                     if (locatorType == SL_DATALOCATOR_ANDROIDSIMPLEBUFFERQUEUE) {
                         this->mBufferQueue.mNumBuffers =
                             this->mDataSink.mLocator.mBufferQueue.numBuffers;
-                        // inline allocation of circular Buffer Queue mArray, up to a typical max
-                        if (BUFFER_HEADER_TYPICAL >= this->mBufferQueue.mNumBuffers) {
-                            this->mBufferQueue.mArray = this->mBufferQueue.mTypical;
-                        } else {
-                            // Avoid possible integer overflow during multiplication; this arbitrary
-                            // maximum is big enough to not interfere with real applications, but
-                            // small enough to not overflow.
-                            if (this->mBufferQueue.mNumBuffers >= 256) {
-                                result = SL_RESULT_MEMORY_FAILURE;
-                                break;
-                            }
-                            this->mBufferQueue.mArray = (BufferHeader *) malloc((this->mBufferQueue.
-                                    mNumBuffers + 1) * sizeof(BufferHeader));
-                            if (NULL == this->mBufferQueue.mArray) {
-                                result = SL_RESULT_MEMORY_FAILURE;
-                                break;
-                            }
+                        result = IEngine_AllocateBufferQueueArray(&this->mBufferQueue);
+                        if (SL_RESULT_SUCCESS != result) {
+                            break;
                         }
-                        this->mBufferQueue.mFront = this->mBufferQueue.mArray;
-                        this->mBufferQueue.mRear = this->mBufferQueue.mArray;
                     }
 #endif
 
@@ -710,11 +693,7 @@ static SLresult IEngine_QueryNumSupportedExtensions(SLEngineItf self, SLuint32 *
     if (NULL == pNumExtensions) {
         result = SL_RESULT_PARAMETER_INVALID;
     } else {
-#ifdef ANDROID
-        // FIXME support Android extensions
-#else
         *pNumExtensions = 0;
-#endif
         result = SL_RESULT_SUCCESS;
     }
 
@@ -728,13 +707,7 @@ static SLresult IEngine_QuerySupportedExtension(SLEngineItf self,
     SL_ENTER_INTERFACE
 
     // any index >= 0 will be >= number of supported extensions
-
-#ifdef ANDROID
-    // FIXME support Android extensions
     result = SL_RESULT_PARAMETER_INVALID;
-#else
-    result = SL_RESULT_PARAMETER_INVALID;
-#endif
 
     SL_LEAVE_INTERFACE
 }
@@ -748,13 +721,8 @@ static SLresult IEngine_IsExtensionSupported(SLEngineItf self,
     if (NULL == pExtensionName || NULL == pSupported) {
         result = SL_RESULT_PARAMETER_INVALID;
     } else {
-#ifdef ANDROID
-        // FIXME support Android extensions
-        *pSupported = SL_BOOLEAN_FALSE;
-#else
         // no extensions are supported
         *pSupported = SL_BOOLEAN_FALSE;
-#endif
         result = SL_RESULT_SUCCESS;
     }
 

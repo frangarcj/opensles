@@ -441,10 +441,7 @@ static SLresult IEqualizer_GetPresetName(SLEqualizerItf self, SLuint16 index, co
         if (index >= this->mNumPresets) {
             result = SL_RESULT_PARAMETER_INVALID;
         } else {
-            // FIXME query preset name rather than retrieve it from the engine.
-            //       In SL ES 1.0.1, the strings must exist for the lifetime of the engine.
-            //       Starting in 1.1, this will change and we don't need to hold onto the strings
-            //       for so long as they will copied into application space.
+            // In SL ES 1.0.1 these strings must remain valid for the engine lifetime.
             *ppName = (SLchar *) this->mThis->mEngine->mEqPresetNames[index];
             result = SL_RESULT_SUCCESS;
         }

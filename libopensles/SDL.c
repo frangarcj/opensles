@@ -48,7 +48,7 @@ void SDL_open(IEngine *thisEngine)
     fmt.freq = &_opensles_user_freq!=NULL?_opensles_user_freq:44100;
     fmt.format = AUDIO_S16;
     fmt.channels = STEREO_CHANNELS;
-#ifdef _WIN32 // FIXME Either a bug or a serious misunderstanding
+#ifdef _WIN32 // Windows SDL expects the raw sample count here.
     fmt.samples = SndFile_BUFSIZE;
 #else
     fmt.samples = SndFile_BUFSIZE / sizeof(short);

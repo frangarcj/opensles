@@ -557,7 +557,6 @@ typedef struct Engine_interface {
     SLboolean mShutdownAck;
     ThreadPool mThreadPool; // for asynchronous operations
 #if defined(ANDROID) && !defined(USE_BACKPORT)
-    // FIXME number of presets will only be saved in IEqualizer, preset names will not be stored
     SLuint32 mEqNumPresets;
     char** mEqPresetNames;
 #endif
@@ -728,7 +727,7 @@ typedef struct Play_interface {
     SLuint32 mEventFlags;
     // the ISeek trick of using a distinct value doesn't work here because it's readable by app
     SLmillisecond mMarkerPosition;
-    SLmillisecond mPositionUpdatePeriod; // Zero means do not do position updates (FIXME ~0)
+    SLmillisecond mPositionUpdatePeriod; // Zero means do not do position updates.
 #ifdef USE_OUTPUTMIXEXT
     SLuint32 mFrameUpdatePeriod;         // mPositionUpdatePeriod in frame units
     SLmillisecond mLastSeekPosition;     // Last known accurate position, set at Seek
@@ -863,7 +862,7 @@ typedef struct /*Volume_interface*/ {
 
 #ifdef ANDROID
 
-// FIXME Move these into the I... section above
+// Android-specific interfaces live here because they depend on the effect structures above.
 
 typedef struct {
     const struct SLAndroidEffectItf_ *mItf;
@@ -892,7 +891,7 @@ typedef struct {
 } IAndroidConfiguration;
 
 #if defined(ANDROID) && !defined(USE_BACKPORT)
-// FIXME this include is done here so the effect structures have been defined. Messy.
+// Included here after the effect structures are defined.
 #include "android_Effect.h"
 #endif
 
