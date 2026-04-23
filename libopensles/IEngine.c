@@ -541,6 +541,10 @@ static SLresult IEngine_CreateOutputMix(SLEngineItf self, SLObjectItf *pMix, SLu
             if (NULL == this) {
                 result = SL_RESULT_MEMORY_FAILURE;
             } else {
+#ifdef USE_OUTPUTMIXEXT
+                this->mOutputMixExt.mThis = &this->mObject;
+                IOutputMixExt_init(&this->mOutputMixExt);
+#endif
 #ifdef ANDROID
                 android_outputMix_create(this);
 #endif

@@ -46,6 +46,7 @@ typedef struct {
 #ifndef this
 #define this this_
 #endif
+extern void IOutputMixExt_init(void *self);
 extern SLresult IOutputMixExt_checkAudioPlayerSourceSink(CAudioPlayer *this);
 extern void audioPlayerGainUpdate(CAudioPlayer *this);
 extern void IOutputMixExt_FillBuffer(SLOutputMixExtItf self, void *pBuffer, SLuint32 size);
