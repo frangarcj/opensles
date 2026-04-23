@@ -60,6 +60,9 @@ void SDL_open(IEngine *thisEngine)
         SL_LOGE("Unable to open audio: %s", SDL_GetError());
         exit(EXIT_FAILURE);
     }
+
+    // Start the callback thread immediately so mixer-driven lifecycle work can progress.
+    SDL_PauseAudio(0);
 }
 
 

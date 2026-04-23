@@ -19,6 +19,39 @@
 #include "sles_allinclusive.h"
 
 
+#ifdef USE_OUTPUTMIXEXT
+void audioPlayerHandlePositionUpdate(CAudioPlayer *audioPlayer, SLboolean *headAtMarker,
+    SLboolean *headAtNewPos)
+{
+    IPlay *play = &audioPlayer->mPlay;
+    SLuint32 sampleRateMilliHz = audioPlayer->mSampleRateMilliHz;
+
+    if (0 == sampleRateMilliHz) {
+        return;
+    }
+
+    play->mPosition = (SLuint32) (((long long) play->mFramesSinceLastSeek * 1000000LL) /
+        sampleRateMilliHz) + play->mLastSeekPosition;
+
+    if (!play->mMarkerReached && (play->mEventFlags & SL_PLAYEVENT_HEADATMARKER) &&
+            (0 != play->mMarkerPosition) && (play->mPosition >= play->mMarkerPosition)) {
+        play->mMarkerReached = SL_BOOLEAN_TRUE;
+        *headAtMarker = SL_BOOLEAN_TRUE;
+    }
+
+    if ((0 != play->mFrameUpdatePeriod) &&
+            (play->mFramesSincePositionUpdate >= play->mFrameUpdatePeriod) &&
+            (play->mEventFlags & SL_PLAYEVENT_HEADATNEWPOS)) {
+        if ((play->mFramesSincePositionUpdate -= play->mFrameUpdatePeriod) >=
+                play->mFrameUpdatePeriod) {
+            play->mFramesSincePositionUpdate %= play->mFrameUpdatePeriod;
+        }
+        *headAtNewPos = SL_BOOLEAN_TRUE;
+    }
+}
+#endif
+
+
 static SLresult IPlay_SetPlayState(SLPlayItf self, SLuint32 state)
 {
     SL_ENTER_INTERFACE
@@ -51,6 +84,11 @@ static SLresult IPlay_SetPlayState(SLPlayItf self, SLuint32 state)
             case (SL_PLAYSTATE_STOPPED  << 2) | SL_PLAYSTATE_PLAYING:
             case (SL_PLAYSTATE_PAUSED   << 2) | SL_PLAYSTATE_PLAYING:
                 attr = ATTR_PLAYSTATE;
+                this->mHeadAtEnd = SL_BOOLEAN_FALSE;
+                this->mHeadStalled = SL_BOOLEAN_FALSE;
+                if (SL_PLAYSTATE_STOPPED == this->mState) {
+                    this->mMarkerReached = SL_BOOLEAN_FALSE;
+                }
                 // set enqueue attribute if queue is non-empty and state becomes PLAYING
                 if ((NULL != audioPlayer) && (audioPlayer->mBufferQueue.mFront !=
                     audioPlayer->mBufferQueue.mRear)) {
@@ -61,6 +99,12 @@ static SLresult IPlay_SetPlayState(SLPlayItf self, SLuint32 state)
             case (SL_PLAYSTATE_STOPPED  << 2) | SL_PLAYSTATE_PAUSED:
             case (SL_PLAYSTATE_PLAYING  << 2) | SL_PLAYSTATE_PAUSED:
                 // easy
+                this->mHeadAtEnd = SL_BOOLEAN_FALSE;
+                this->mHeadStalled = SL_BOOLEAN_FALSE;
+                if (SL_PLAYSTATE_STOPPED == this->mState) {
+                    attr |= ATTR_PLAYSTATE;
+                    this->mMarkerReached = SL_BOOLEAN_FALSE;
+                }
                 this->mState = state;
                 break;
 
@@ -76,6 +120,9 @@ static SLresult IPlay_SetPlayState(SLPlayItf self, SLuint32 state)
             case (SL_PLAYSTATE_PAUSED   << 2) | SL_PLAYSTATE_STOPPED:
             case (SL_PLAYSTATE_PLAYING  << 2) | SL_PLAYSTATE_STOPPED:
                 // tell mixer to stop, then wait for mixer to acknowledge the request to stop
+                this->mHeadAtEnd = SL_BOOLEAN_FALSE;
+                this->mHeadStalled = SL_BOOLEAN_FALSE;
+                this->mMarkerReached = SL_BOOLEAN_FALSE;
                 this->mState = SL_PLAYSTATE_STOPPING;
                 continue;
 
@@ -286,6 +333,7 @@ static SLresult IPlay_SetMarkerPosition(SLPlayItf self, SLmillisecond mSec)
     interface_lock_exclusive(this);
     if (this->mMarkerPosition != mSec) {
         this->mMarkerPosition = mSec;
+            this->mMarkerReached = SL_BOOLEAN_FALSE;
         interface_unlock_exclusive_attributes(this, ATTR_PLAYSTATE);
     } else
         interface_unlock_exclusive(this);
@@ -307,6 +355,7 @@ static SLresult IPlay_ClearMarkerPosition(SLPlayItf self)
         this->mMarkerPosition = 0;
     }
 #endif
+    this->mMarkerReached = SL_BOOLEAN_FALSE;
     interface_unlock_exclusive_attributes(this, ATTR_TRANSPORT);
     result = SL_RESULT_SUCCESS;
 
@@ -422,5 +471,8 @@ void IPlay_init(void *self)
     this->mLastSeekPosition = 0;
     this->mFramesSinceLastSeek = 0;
     this->mFramesSincePositionUpdate = 0;
+    this->mHeadAtEnd = SL_BOOLEAN_FALSE;
+    this->mHeadStalled = SL_BOOLEAN_FALSE;
+    this->mMarkerReached = SL_BOOLEAN_FALSE;
 #endif
 }

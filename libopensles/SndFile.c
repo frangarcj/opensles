@@ -97,7 +97,8 @@ void audioPlayerRefillBuffers(CAudioPlayer *audioPlayer)
         sndfile_update_prefetch_fill_level(audioPlayer,
             sndfile_compute_fill_level(queuedBufferCount, totalBuffers));
 
-        if ((SL_PLAYSTATE_PLAYING != state) || (queuedBufferCount >= totalBuffers)) {
+        if (((SL_PLAYSTATE_PLAYING != state) && (SL_PLAYSTATE_PAUSED != state)) ||
+            (queuedBufferCount >= totalBuffers)) {
             return;
         }
 
@@ -127,13 +128,25 @@ void audioPlayerRefillBuffers(CAudioPlayer *audioPlayer)
         }
 
         object_lock_exclusive(&audioPlayer->mObject);
+        slPlayCallback callback = NULL;
+        void *context = NULL;
         queuedBufferCount = audioPlayer->mBufferQueue.mState.count;
         totalBuffers = audioPlayer->mBufferQueue.mNumBuffers;
         audioPlayer->mPlay.mState = SL_PLAYSTATE_PAUSED;
+        if (!audioPlayer->mPlay.mHeadAtEnd) {
+            audioPlayer->mPlay.mHeadAtEnd = SL_BOOLEAN_TRUE;
+            if (audioPlayer->mPlay.mEventFlags & SL_PLAYEVENT_HEADATEND) {
+                callback = audioPlayer->mPlay.mCallback;
+                context = audioPlayer->mPlay.mContext;
+            }
+        }
         this->mEOF = SL_BOOLEAN_TRUE;
         object_unlock_exclusive_attributes(&audioPlayer->mObject, ATTR_PLAYSTATE);
         sndfile_update_prefetch_fill_level(audioPlayer,
             sndfile_compute_fill_level(queuedBufferCount, totalBuffers));
+        if (NULL != callback) {
+            (*callback)(&audioPlayer->mPlay.mItf, context, SL_PLAYEVENT_HEADATEND);
+        }
         return;
     }
 }
@@ -146,7 +159,8 @@ void audioPlayerRefillBuffers(CAudioPlayer *audioPlayer)
 void SndFile_Callback(SLBufferQueueItf caller, void *pContext)
 {
     CAudioPlayer *thisAP = (CAudioPlayer *) pContext;
-    bool headAtNewPos = false;
+    SLboolean headAtMarker = SL_BOOLEAN_FALSE;
+    SLboolean headAtNewPos = SL_BOOLEAN_FALSE;
     object_lock_exclusive(&thisAP->mObject);
     if (SL_PLAYSTATE_PLAYING != thisAP->mPlay.mState) {
         object_unlock_exclusive(&thisAP->mObject);
@@ -156,33 +170,15 @@ void SndFile_Callback(SLBufferQueueItf caller, void *pContext)
     void *context = thisAP->mPlay.mContext;
     SLuint32 queuedBufferCount = thisAP->mBufferQueue.mState.count;
     SLuint16 totalBuffers = thisAP->mBufferQueue.mNumBuffers;
-    // make a copy of sample rate so we are absolutely sure we will not divide by zero
-    SLuint32 sampleRateMilliHz = thisAP->mSampleRateMilliHz;
-    if (0 != sampleRateMilliHz) {
-        // this will overflow after 49 days, but no fix possible as it's part of the API
-        thisAP->mPlay.mPosition = (SLuint32) (((long long) thisAP->mPlay.mFramesSinceLastSeek *
-            1000000LL) / sampleRateMilliHz) + thisAP->mPlay.mLastSeekPosition;
-        // make a good faith effort for the mean time between "head at new position" callbacks to
-        // occur at the requested update period, but there will be jitter
-        SLuint32 frameUpdatePeriod = thisAP->mPlay.mFrameUpdatePeriod;
-        if ((0 != frameUpdatePeriod) &&
-            (thisAP->mPlay.mFramesSincePositionUpdate >= frameUpdatePeriod) &&
-            (SL_PLAYEVENT_HEADATNEWPOS & thisAP->mPlay.mEventFlags)) {
-            // if we overrun a requested update period, then reset the clock modulo the
-            // update period so that it appears to the application as one or more lost callbacks,
-            // but no additional jitter
-            if ((thisAP->mPlay.mFramesSincePositionUpdate -= thisAP->mPlay.mFrameUpdatePeriod) >=
-                    frameUpdatePeriod) {
-                thisAP->mPlay.mFramesSincePositionUpdate %= frameUpdatePeriod;
-            }
-            headAtNewPos = true;
-        }
-    }
+    audioPlayerHandlePositionUpdate(thisAP, &headAtMarker, &headAtNewPos);
     object_unlock_exclusive_attributes(&thisAP->mObject, ATTR_SNDREFILL);
     sndfile_update_prefetch_fill_level(thisAP,
         sndfile_compute_fill_level(queuedBufferCount, totalBuffers));
     // callbacks are called with mutex unlocked
     if (NULL != callback) {
+        if (headAtMarker) {
+            (*callback)(&thisAP->mPlay.mItf, context, SL_PLAYEVENT_HEADATMARKER);
+        }
         if (headAtNewPos) {
             (*callback)(&thisAP->mPlay.mItf, context, SL_PLAYEVENT_HEADATNEWPOS);
         }
@@ -285,10 +281,14 @@ void audioPlayerTransportUpdate(CAudioPlayer *audioPlayer)
             if (pos > audioPlayer->mPlay.mDuration) {
                 pos = audioPlayer->mPlay.mDuration;
             }
+            audioPlayer->mPlay.mPosition = pos;
             audioPlayer->mPlay.mLastSeekPosition = pos;
             audioPlayer->mPlay.mFramesSinceLastSeek = 0;
             // seek postpones the next head at new position callback
             audioPlayer->mPlay.mFramesSincePositionUpdate = 0;
+            audioPlayer->mPlay.mHeadAtEnd = SL_BOOLEAN_FALSE;
+            audioPlayer->mPlay.mHeadStalled = SL_BOOLEAN_FALSE;
+            audioPlayer->mPlay.mMarkerReached = SL_BOOLEAN_FALSE;
         }
         object_unlock_exclusive(&audioPlayer->mObject);
 
@@ -296,7 +296,14 @@ void audioPlayerTransportUpdate(CAudioPlayer *audioPlayer)
             SLboolean seekSucceeded = SL_BOOLEAN_FALSE;
 
             // discard any enqueued buffers for the old position
-            IBufferQueue_Clear(&audioPlayer->mBufferQueue.mItf);
+            object_lock_exclusive(&audioPlayer->mObject);
+            IBufferQueue_ReleaseArrayBuffers(&audioPlayer->mBufferQueue);
+            audioPlayer->mBufferQueue.mFront = &audioPlayer->mBufferQueue.mArray[0];
+            audioPlayer->mBufferQueue.mRear = &audioPlayer->mBufferQueue.mArray[0];
+            audioPlayer->mBufferQueue.mState.count = 0;
+            audioPlayer->mBufferQueue.mState.playIndex = 0;
+            audioPlayer->mBufferQueue.mClearRequested = SL_BOOLEAN_FALSE;
+            object_unlock_exclusive(&audioPlayer->mObject);
             empty = SL_BOOLEAN_TRUE;
             sndfile_update_prefetch_fill_level(audioPlayer, 0);
 
@@ -320,7 +327,8 @@ void audioPlayerTransportUpdate(CAudioPlayer *audioPlayer)
         }
 
         if (empty && ((SL_TIME_UNKNOWN != pos) ||
-            (SL_PLAYSTATE_PLAYING == audioPlayer->mPlay.mState))) {
+            (SL_PLAYSTATE_PLAYING == audioPlayer->mPlay.mState) ||
+            (SL_PLAYSTATE_PAUSED == audioPlayer->mPlay.mState))) {
             audioPlayerRefillBuffers(audioPlayer);
         }
 
@@ -348,9 +356,15 @@ SLresult SndFile_Realize(CAudioPlayer *this)
             int ok;
             ok = pthread_mutex_init(&this->mSndFile.mMutex, (const pthread_mutexattr_t *) NULL);
             assert(0 == ok);
-            SLBufferQueueItf bufferQueue = &this->mBufferQueue.mItf;
-            IBufferQueue *thisBQ = (IBufferQueue *) bufferQueue;
-            IBufferQueue_RegisterCallback(&thisBQ->mItf, SndFile_Callback, this);
+            // URI players need internal refill/position callbacks even when the public
+            // BufferQueue interface is not exposed.
+            this->mBufferQueue.mThis = this;
+            this->mBufferQueue.mCallback = SndFile_Callback;
+            this->mBufferQueue.mContext = this;
+            this->mBufferQueue.samplerate = this->mSndFile.mSfInfo.samplerate * 1000;
+            this->mBufferQueue.channels = this->mSndFile.mSfInfo.channels;
+            this->mBufferQueue.bps = ((this->mSndFile.mSfInfo.format & SF_FORMAT_SUBMASK) ==
+                    SF_FORMAT_PCM_U8) ? 8 : 16;
             this->mPrefetchStatus.mStatus = SL_PREFETCHSTATUS_UNDERFLOW;
             this->mPrefetchStatus.mLevel = 0;
             // this is the initial duration; will update when a new maximum position is detected
