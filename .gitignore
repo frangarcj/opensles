@@ -1,2 +1,4 @@
 *.o
 *.a
+# Host-test build artifacts
+/build/host-tests/
