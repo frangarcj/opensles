@@ -75,11 +75,14 @@ TEST_PROGRAMS := \
 	$(TEST_BUILD_DIR)/slesTestManyPlayers \
 	$(TEST_BUILD_DIR)/slesTestManyPlayersChurn \
 	$(TEST_BUILD_DIR)/slesTestUriMimeHost \
-	$(TEST_BUILD_DIR)/slesTestSrcSinkHost
+	$(TEST_BUILD_DIR)/slesTestSrcSinkHost \
+	$(TEST_BUILD_DIR)/slesTestEngineHost \
+	$(TEST_BUILD_DIR)/slesTestObjectHost \
+	$(TEST_BUILD_DIR)/slesTestConfigBqHost
 
 TEST_SUPPORT := $(TEST_BUILD_DIR)/test_support.o
 
-.PHONY: all clean smoke run-loopuri run-playuri run-slowdown run-getposition run-playuri2 run-playstates run-manyplayers run-churn run-urimime-host run-srcsink-host
+.PHONY: all clean smoke run-loopuri run-playuri run-slowdown run-getposition run-playuri2 run-playstates run-manyplayers run-churn run-urimime-host run-srcsink-host run-engine-host run-object-host run-configbq-host
 
 all: $(TEST_PROGRAMS)
 
@@ -105,6 +108,15 @@ $(TEST_BUILD_DIR)/slesTestUriMimeHost: $(ROOT)/tests/sandbox/slesTestUriMimeHost
 	$(CC) $(CFLAGS) $< $(HOST_ADAPTER) $(TEST_SUPPORT) $(STATIC_LIB) $(LDLIBS) -o $@
 
 $(TEST_BUILD_DIR)/slesTestSrcSinkHost: $(ROOT)/tests/sandbox/slesTestSrcSinkHost.c $(STATIC_LIB) $(TEST_SUPPORT) | $(TEST_BUILD_DIR)
+	$(CC) $(CFLAGS) $< $(TEST_SUPPORT) $(STATIC_LIB) $(LDLIBS) -o $@
+
+$(TEST_BUILD_DIR)/slesTestEngineHost: $(ROOT)/tests/sandbox/slesTestEngineHost.c $(STATIC_LIB) $(TEST_SUPPORT) | $(TEST_BUILD_DIR)
+	$(CC) $(CFLAGS) $< $(TEST_SUPPORT) $(STATIC_LIB) $(LDLIBS) -o $@
+
+$(TEST_BUILD_DIR)/slesTestObjectHost: $(ROOT)/tests/sandbox/slesTestObjectHost.c $(STATIC_LIB) $(TEST_SUPPORT) | $(TEST_BUILD_DIR)
+	$(CC) $(CFLAGS) $< $(TEST_SUPPORT) $(STATIC_LIB) $(LDLIBS) -o $@
+
+$(TEST_BUILD_DIR)/slesTestConfigBqHost: $(ROOT)/tests/sandbox/slesTestConfigBqHost.c $(STATIC_LIB) $(TEST_SUPPORT) | $(TEST_BUILD_DIR)
 	$(CC) $(CFLAGS) $< $(TEST_SUPPORT) $(STATIC_LIB) $(LDLIBS) -o $@
 
 $(SAMPLE_WAV): | $(BUILD_DIR)
@@ -141,6 +153,15 @@ run-urimime-host: $(TEST_BUILD_DIR)/slesTestUriMimeHost $(SAMPLE_WAV)
 
 run-srcsink-host: $(TEST_BUILD_DIR)/slesTestSrcSinkHost
 	SDL_AUDIODRIVER=dummy $(TEST_BUILD_DIR)/slesTestSrcSinkHost
+
+run-engine-host: $(TEST_BUILD_DIR)/slesTestEngineHost
+	SDL_AUDIODRIVER=dummy $(TEST_BUILD_DIR)/slesTestEngineHost
+
+run-object-host: $(TEST_BUILD_DIR)/slesTestObjectHost
+	SDL_AUDIODRIVER=dummy $(TEST_BUILD_DIR)/slesTestObjectHost
+
+run-configbq-host: $(TEST_BUILD_DIR)/slesTestConfigBqHost
+	SDL_AUDIODRIVER=dummy $(TEST_BUILD_DIR)/slesTestConfigBqHost
 
 clean:
 	rm -rf $(BUILD_DIR)
