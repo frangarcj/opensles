@@ -142,6 +142,11 @@ SLresult IBufferQueue_Enqueue(SLBufferQueueItf self, const void *pBuffer, SLuint
             oldRear->mOwnedBuffer = ownedBuffer;
             this->mRear = newRear;
             ++this->mState.count;
+            if (SL_OBJECTID_AUDIOPLAYER == InterfaceToObjectID(this)) {
+                CAudioPlayer *audioPlayer = (CAudioPlayer *) this->mThis;
+                audioPlayer->mPlay.mHeadAtEnd = SL_BOOLEAN_FALSE;
+                audioPlayer->mPlay.mHeadStalled = SL_BOOLEAN_FALSE;
+            }
             result = SL_RESULT_SUCCESS;
         }
         // set enqueue attribute if state is PLAYING and the first buffer is enqueued

@@ -733,6 +733,9 @@ typedef struct Play_interface {
     SLmillisecond mLastSeekPosition;     // Last known accurate position, set at Seek
     SLuint32 mFramesSinceLastSeek;       // Frames mixed since last known accurate position
     SLuint32 mFramesSincePositionUpdate; // Frames mixed since last position update callback
+    SLboolean mHeadAtEnd;                // One-shot non-Android end-of-content notification
+    SLboolean mHeadStalled;              // One-shot non-Android starvation notification
+    SLboolean mMarkerReached;            // Marker notification already emitted for current run
 #endif
 } IPlay;
 
@@ -1336,6 +1339,9 @@ extern void slTraceLeaveInterfaceVoid(const char *function);
 #define SL_PLAYSTATE_STOPPING ((SLuint32) 0x4) // Play::Stop while PLAYING
 // If we needed it, could have PLAYING mean mixer is currently reading from front buffer,
 // while PLAYABLE would mean application requested PLAYING, but buffer queue is empty
+
+extern void audioPlayerHandlePositionUpdate(CAudioPlayer *audioPlayer, SLboolean *headAtMarker,
+    SLboolean *headAtNewPos);
 
 #endif
 

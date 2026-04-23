@@ -61,6 +61,12 @@ static SLboolean track_check(Track *track)
 
     CAudioPlayer *audioPlayer = track->mAudioPlayer;
     if (NULL != audioPlayer) {
+        slPlayCallback playCallback = NULL;
+        void *playContext = NULL;
+        SLboolean headAtMarker = SL_BOOLEAN_FALSE;
+        SLboolean headAtNewPos = SL_BOOLEAN_FALSE;
+        SLboolean headAtEnd = SL_BOOLEAN_FALSE;
+        SLboolean headStalled = SL_BOOLEAN_FALSE;
 
         // track is initialized
 
@@ -76,6 +82,9 @@ static SLboolean track_check(Track *track)
             track->mFramesMixed = 0;
             audioPlayer->mPlay.mFramesSinceLastSeek += framesMixed;
             audioPlayer->mPlay.mFramesSincePositionUpdate += framesMixed;
+            if (NULL == audioPlayer->mSndFile.mSNDFILE) {
+                audioPlayerHandlePositionUpdate(audioPlayer, &headAtMarker, &headAtNewPos);
+            }
         }
 
         SLboolean doBroadcast = SL_BOOLEAN_FALSE;
@@ -132,6 +141,14 @@ static SLboolean track_check(Track *track)
                 // no buffers on queue, so playable but not playing
                 // NTH should be able to call a desperation callback when completely starved,
                 // or call less often than every buffer based on high/low water-marks
+                if (!audioPlayer->mPlay.mHeadAtEnd) {
+                    audioPlayer->mPlay.mHeadAtEnd = SL_BOOLEAN_TRUE;
+                    headAtEnd = SL_BOOLEAN_TRUE;
+                }
+                if (!audioPlayer->mPlay.mHeadStalled) {
+                    audioPlayer->mPlay.mHeadStalled = SL_BOOLEAN_TRUE;
+                    headStalled = SL_BOOLEAN_TRUE;
+                }
 #ifdef SYBERIA
 				audioPlayer->mPlay.mState = SL_PLAYSTATE_STOPPING;
 #endif
@@ -174,6 +191,25 @@ broadcast:
         }
 
         object_unlock_exclusive(&audioPlayer->mObject);
+
+        if (headAtMarker || headAtNewPos || headAtEnd || headStalled) {
+            playCallback = audioPlayer->mPlay.mCallback;
+            playContext = audioPlayer->mPlay.mContext;
+        }
+        if (NULL != playCallback) {
+            if (headAtMarker && (audioPlayer->mPlay.mEventFlags & SL_PLAYEVENT_HEADATMARKER)) {
+                (*playCallback)(&audioPlayer->mPlay.mItf, playContext, SL_PLAYEVENT_HEADATMARKER);
+            }
+            if (headAtNewPos && (audioPlayer->mPlay.mEventFlags & SL_PLAYEVENT_HEADATNEWPOS)) {
+                (*playCallback)(&audioPlayer->mPlay.mItf, playContext, SL_PLAYEVENT_HEADATNEWPOS);
+            }
+            if (headStalled && (audioPlayer->mPlay.mEventFlags & SL_PLAYEVENT_HEADSTALLED)) {
+                (*playCallback)(&audioPlayer->mPlay.mItf, playContext, SL_PLAYEVENT_HEADSTALLED);
+            }
+            if (headAtEnd && (audioPlayer->mPlay.mEventFlags & SL_PLAYEVENT_HEADATEND)) {
+                (*playCallback)(&audioPlayer->mPlay.mItf, playContext, SL_PLAYEVENT_HEADATEND);
+            }
+        }
 
     }
 
