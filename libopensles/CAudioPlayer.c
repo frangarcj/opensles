@@ -31,7 +31,7 @@ SLresult CAudioPlayer_Realize(void *self, SLboolean async)
 #endif
 
 #ifdef USE_SNDFILE
-    if (SL_DATALOCATOR_URI == this->mDataSource.mLocator.mLocatorType) {
+    if (SL_DATALOCATOR_URI == this->mDataSource.mLocator.mLocatorType || SL_DATALOCATOR_ANDROIDFD == this->mDataSource.mLocator.mLocatorType) {
         result = SndFile_Realize(this);
     }
 #endif

@@ -236,6 +236,7 @@ static inline void BufferHeader_release(BufferHeader *header)
 struct SndFile {
     // save URI also?
     SLchar *mPathname;
+    int mFD;
     SNDFILE *mSNDFILE;
     SF_INFO mSfInfo;
     pthread_mutex_t mMutex; // protects mSNDFILE only

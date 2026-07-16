@@ -699,6 +699,7 @@ SLresult checkSourceFormatVsInterfacesCompatibility(const DataLocatorFormat *pDa
         }
         break;
     case SL_DATALOCATOR_URI:
+    case SL_DATALOCATOR_ANDROIDFD:
         if (SL_DATAFORMAT_MIME != pDataLocatorFormat->mFormat.mFormatType) {
             SL_LOGE("URI data sources require SL_DATAFORMAT_MIME");
             return SL_RESULT_CONTENT_UNSUPPORTED;

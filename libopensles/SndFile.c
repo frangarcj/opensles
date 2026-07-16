@@ -192,6 +192,7 @@ SLboolean SndFile_IsSupported(const SF_INFO *sfinfo)
 {
     switch (sfinfo->format & SF_FORMAT_TYPEMASK) {
     case SF_FORMAT_WAV:
+    case SF_FORMAT_OGG:
         break;
     default:
         return SL_BOOLEAN_FALSE;
@@ -199,6 +200,7 @@ SLboolean SndFile_IsSupported(const SF_INFO *sfinfo)
     switch (sfinfo->format & SF_FORMAT_SUBMASK) {
     case SF_FORMAT_PCM_U8:
     case SF_FORMAT_PCM_16:
+    case SF_FORMAT_VORBIS:
         break;
     default:
         return SL_BOOLEAN_FALSE;
@@ -233,6 +235,25 @@ SLresult SndFile_checkAudioPlayerSourceSink(CAudioPlayer *this)
     case SL_DATALOCATOR_BUFFERQUEUE:
     case SL_DATALOCATOR_ANDROIDSIMPLEBUFFERQUEUE:
         break;
+    case SL_DATALOCATOR_ANDROIDFD:
+        {
+        SLDataLocator_AndroidFD *dl_androidfd = (SLDataLocator_AndroidFD *) pAudioSrc->pLocator;
+        int fd = dl_androidfd->fd;
+        if (-1 > fd) {
+            return SL_RESULT_PARAMETER_INVALID;
+        }
+        switch (formatType) {
+        case SL_DATAFORMAT_NULL:    // OK to omit the data format
+        case SL_DATAFORMAT_MIME:    // we ignore a MIME type if specified
+            break;
+        default:
+            return SL_RESULT_CONTENT_UNSUPPORTED;
+        }
+        this->mSndFile.mPathname = NULL;
+        this->mSndFile.mFD = fd;
+        this->mBufferQueue.mNumBuffers = SndFile_NUMBUFS;
+        }
+        break;
     case SL_DATALOCATOR_URI:
         {
         SLDataLocator_URI *dl_uri = (SLDataLocator_URI *) pAudioSrc->pLocator;
@@ -250,6 +271,7 @@ SLresult SndFile_checkAudioPlayerSourceSink(CAudioPlayer *this)
             return SL_RESULT_CONTENT_UNSUPPORTED;
         }
         this->mSndFile.mPathname = uri;
+        this->mSndFile.mFD = -1;
         this->mBufferQueue.mNumBuffers = SndFile_NUMBUFS;
         }
         break;
@@ -342,10 +364,16 @@ void audioPlayerTransportUpdate(CAudioPlayer *audioPlayer)
 SLresult SndFile_Realize(CAudioPlayer *this)
 {
     SLresult result = SL_RESULT_SUCCESS;
-    if (NULL != this->mSndFile.mPathname) {
+    if (NULL != this->mSndFile.mPathname || -1 < this->mSndFile.mFD) {
         this->mSndFile.mSfInfo.format = 0;
-        this->mSndFile.mSNDFILE = sf_open(
-            (const char *) this->mSndFile.mPathname, SFM_READ, &this->mSndFile.mSfInfo);
+        if(this->mSndFile.mPathname != NULL) {
+            this->mSndFile.mSNDFILE = sf_open(
+                (const char *) this->mSndFile.mPathname, SFM_READ, &this->mSndFile.mSfInfo);
+        }
+        else {
+            this->mSndFile.mSNDFILE = sf_open_fd(
+                this->mSndFile.mFD, SFM_READ, &this->mSndFile.mSfInfo, false);
+        }
         if (NULL == this->mSndFile.mSNDFILE) {
             result = SL_RESULT_CONTENT_NOT_FOUND;
         } else if (!SndFile_IsSupported(&this->mSndFile.mSfInfo)) {
