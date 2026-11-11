@@ -1,14 +1,15 @@
 #include <SLES/OpenSLES.h>
+#include "threads.h"
+#include "../test_watchdog.h"
 
 #include <assert.h>
-#include <pthread.h>
 #include <stdatomic.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <unistd.h>
 
-static pthread_mutex_t gate_mutex = PTHREAD_MUTEX_INITIALIZER;
-static pthread_cond_t gate_cond = PTHREAD_COND_INITIALIZER;
+static sles_mutex_t gate_mutex;
+static sles_cond_t gate_cond;
 static atomic_uintptr_t target;
 static atomic_int destroying;
 static atomic_int destroyed;
@@ -23,11 +24,11 @@ void __wrap_audioPlayerTransportUpdate(void *player)
         __real_audioPlayerTransportUpdate(player);
         return;
     }
-    assert(pthread_mutex_lock(&gate_mutex) == 0);
+    assert(sles_mutex_lock(&gate_mutex) == 0);
     entered = 1;
-    assert(pthread_cond_broadcast(&gate_cond) == 0);
-    while (!released) assert(pthread_cond_wait(&gate_cond, &gate_mutex) == 0);
-    assert(pthread_mutex_unlock(&gate_mutex) == 0);
+    assert(sles_cond_broadcast(&gate_cond) == 0);
+    while (!released) assert(sles_cond_wait(&gate_cond, &gate_mutex) == 0);
+    assert(sles_mutex_unlock(&gate_mutex) == 0);
 }
 
 static void *destroy_player(void *arg)
@@ -41,7 +42,9 @@ static void *destroy_player(void *arg)
 
 int main(void)
 {
-    alarm(15);
+    opensles_test_watchdog(15);
+    assert(sles_mutex_init(&gate_mutex) == 0);
+    assert(sles_cond_init(&gate_cond, &gate_mutex) == 0);
     SLObjectItf engine_object, mix, player;
     SLEngineItf engine;
     SLPlayItf play;
@@ -69,23 +72,25 @@ int main(void)
     assert((*queue)->Enqueue(queue, pcm, sizeof(pcm)) == SL_RESULT_SUCCESS);
     atomic_store(&target, (uintptr_t)player);
     assert((*play)->SetPlayState(play, SL_PLAYSTATE_PLAYING) == SL_RESULT_SUCCESS);
-    assert(pthread_mutex_lock(&gate_mutex) == 0);
-    while (!entered) assert(pthread_cond_wait(&gate_cond, &gate_mutex) == 0);
-    assert(pthread_mutex_unlock(&gate_mutex) == 0);
-    pthread_t destroyer;
-    assert(pthread_create(&destroyer, NULL, destroy_player, (void *)player) == 0);
+    assert(sles_mutex_lock(&gate_mutex) == 0);
+    while (!entered) assert(sles_cond_wait(&gate_cond, &gate_mutex) == 0);
+    assert(sles_mutex_unlock(&gate_mutex) == 0);
+    sles_thread_t destroyer;
+    assert(sles_thread_create(&destroyer, destroy_player, (void *)player) == 0);
     while (!atomic_load(&destroying)) usleep(1000);
     usleep(300000);
     assert(!atomic_load(&destroyed));
-    assert(pthread_mutex_lock(&gate_mutex) == 0);
+    assert(sles_mutex_lock(&gate_mutex) == 0);
     released = 1;
-    assert(pthread_cond_broadcast(&gate_cond) == 0);
-    assert(pthread_mutex_unlock(&gate_mutex) == 0);
-    assert(pthread_join(destroyer, NULL) == 0);
+    assert(sles_cond_broadcast(&gate_cond) == 0);
+    assert(sles_mutex_unlock(&gate_mutex) == 0);
+    assert(sles_thread_join(destroyer) == 0);
     assert(atomic_load(&destroyed));
     (*mix)->Destroy(mix);
     (*engine_object)->Destroy(engine_object);
-    alarm(0);
+    assert(sles_cond_destroy(&gate_cond) == 0);
+    assert(sles_mutex_destroy(&gate_mutex) == 0);
+    opensles_test_watchdog(0);
     puts("Destroy waits for the sync worker's in-flight player reference");
     return 0;
 }

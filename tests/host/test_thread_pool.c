@@ -1,12 +1,13 @@
 #include <SLES/OpenSLES.h>
 #include "threads.h"
 #include "ThreadPool.h"
+#include "../test_watchdog.h"
 
 #include <assert.h>
 #include <stdatomic.h>
 #include <stdio.h>
 #include <unistd.h>
-#ifdef HAVE_SCE_THREADS
+#if defined(HAVE_SCE_THREADS) && !defined(OPENSLES_TEST_VITA_NATIVE)
 #include "mock_control.h"
 #endif
 
@@ -33,7 +34,7 @@ static void *shutdown_pool(void *arg)
 
 int main(void)
 {
-    alarm(15);
+    opensles_test_watchdog(15);
     for (int round = 0; round < 8; ++round) {
         ThreadPool pool;
         atomic_store(&entered, 0);
@@ -61,11 +62,11 @@ int main(void)
         atomic_store(&released, 1);
         assert(sles_thread_join(shutdown_thread) == 0);
         assert(atomic_load(&executed) == 0);
-#ifdef HAVE_SCE_THREADS
+#if defined(HAVE_SCE_THREADS) && !defined(OPENSLES_TEST_VITA_NATIVE)
         assert(mock_live_resources() == 0);
 #endif
     }
-    alarm(0);
+    opensles_test_watchdog(0);
     puts("Thread pool predicate wakeups and pending-work shutdown cleanup passed");
     return 0;
 }

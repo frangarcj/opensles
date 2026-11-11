@@ -83,15 +83,15 @@ Vita playback state is owned by its engine rather than shared global state. Port
 
 ## Validation and reproducible tests
 
-Host prerequisites are a C/C++ compiler, make, pkg-config, SDL2, libsndfile and sox. The synchronization/destruction gate uses the GNU linker `--wrap` facility and is included in the Linux test build.
+Host prerequisites are a C/C++ compiler, make, pkg-config, SDL2, libsndfile, GoogleTest and sox. On Debian/Ubuntu, GoogleTest is provided by `libgtest-dev`. The synchronization/destruction gate uses the GNU linker `--wrap` facility and is included in the Linux test build.
 
 ```sh
 make -C tests/host -j4 all
-make -C tests/host run-threads run-thread-pool run-callback-clear run-sync-destroy
+make -C tests/host run-bufferqueue-original run-sawtooth-original run-threads run-thread-pool run-callback-clear run-sync-destroy
 
 make -C tests/host -j4 THREAD_BACKEND=sce-mock all
 make -C tests/host THREAD_BACKEND=sce-mock \
-    run-threads run-thread-pool run-callback-clear run-engine-failures run-sync-destroy
+    run-bufferqueue-original run-sawtooth-original run-threads run-thread-pool run-callback-clear run-engine-failures run-sync-destroy
 ```
 
 The native mock tests compile the real SCE adapter against host implementations of the SCE API. To exercise the actual `Vita.c` playback implementation, including startup and output failures:
@@ -101,18 +101,22 @@ make -C tests/host -j4 THREAD_BACKEND=sce-mock AUDIO_BACKEND=vita-mock \
     BUILD_DIR=../../build/vita-mock EXTRA_CFLAGS=-DUSE_DEBUG all
 make -C tests/host THREAD_BACKEND=sce-mock AUDIO_BACKEND=vita-mock \
     BUILD_DIR=../../build/vita-mock EXTRA_CFLAGS=-DUSE_DEBUG \
-    run-threads run-thread-pool run-callback-clear run-engine-failures run-sync-destroy
+    run-bufferqueue-original run-sawtooth-original run-threads run-thread-pool run-callback-clear run-engine-failures run-sync-destroy
 ```
+
+The `run-bufferqueue-original` target builds the original `tests/automated/BufferQueue_test.cpp` without changing its assertions and writes a GoogleTest XML report next to the test executable. This is the repository's AOSP-derived unit test, not the Khronos conformance test suite.
 
 Add `-fsanitize=address,undefined -fno-omit-frame-pointer` to `EXTRA_CFLAGS` and `-fsanitize=address,undefined` to `EXTRA_LDFLAGS` for the sanitizer configurations. Use a distinct `BUILD_DIR` for parallel configurations.
 
 Coverage includes mutex ownership after timeout, bound-condition misuse, contention and broadcasts, 128 worker creations, 64 callback loop iterations, Stop position reset, pending-work shutdown, object lifetime, failed creation/start cleanup, and repeated engine realization. The SDL/SCE-mock engine test exercises 15 injected failures; the Vita-audio mock exercises 19. The existing playback, URI, object-limit and churn tests remain available and are included in CI. Allow at least 300 seconds for the default `run-churn`: its intentional settle and prefetch delays already exceed a 120-second deadline.
 
-The investigation also built and whole-archive-linked the native, pthread and legacy configurations with GCC 10 and GCC 15, checked backend switching, and rejected conflicting flags. Native archives had no unresolved `pthread_*` or `clock_gettime` symbols; their smoke executables linked without pthread. Cross-linked executables were not run on a Vita. The Android/AOSP makefile was updated to include the adapter, but that separate build was not executed.
+The investigation also built and whole-archive-linked the native, pthread and legacy configurations with GCC 10 and GCC 15, checked backend switching, and rejected conflicting flags. Native archives had no unresolved `pthread_*` or `clock_gettime` symbols; their smoke executables linked without pthread. A subsequent GCC 15 native harness ran all six tests successfully with each backend on a real 3.65-based devkit. Its application API reported 3.74 while boot SDK/shell evidence identified 3.650; this is not a native 3.74 firmware test. The Android/AOSP makefile was updated to include the adapter, but that separate build was not executed.
+
+The unchanged original ten-case buffer-queue unit suite exposed a pre-existing invalid free: unused heap-allocated queue slots contained uninitialized owned-buffer pointers. Zero-initializing the slot array fixes that failure. See [the detailed coverage record](TEST_COVERAGE.md) and [native harness instructions](../tests/vita/README.md) for evidence, original-sample failures, firmware provenance and the distinction from official conformance testing.
 
 ## Remaining integration limits
 
-This work did not run the supplied game on hardware, test suspend/resume or audio routing changes, measure real-time latency, or certify all firmware/hardware variants. Mocks validate adapter/lifecycle logic, not the SCE kernel or audio device. A real-device crash trace is still required to confirm the time-adjacent crash hypothesis.
+This work did not run the supplied game on hardware, test suspend/resume or audio routing changes, measure real-time latency, or certify all firmware/hardware variants. The native regressions exercised real SCE primitives/audio separately from the host mocks. A crash trace from the actual game is still required to confirm the time-adjacent crash hypothesis. The original `configbq.c` also exposes a separate, unfixed conversion defect with 48 kHz input into 44.1 kHz output; passing the threading regressions does not imply arbitrary sample-rate correctness.
 
 Callbacks must remain bounded and must not create or destroy objects on the mixer thread. Destroy dependent players before the output mix and engine, and do not access interfaces after destruction. The internal worker lifetime reference does not make arbitrary concurrent application destruction/API use valid. The [Android OpenSL ES programming notes](https://developer.android.com/ndk/guides/audio/opensl/opensl-prog-notes#callbacks-and-threads) describe callback workload and thread-identity/TLS restrictions; the same document describes dependency-ordered destruction.
 

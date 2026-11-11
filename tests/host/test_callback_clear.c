@@ -1,5 +1,6 @@
 #include <SLES/OpenSLES.h>
 #include <SLES/OpenSLES_Android.h>
+#include "../test_watchdog.h"
 
 #include <assert.h>
 #include <stdatomic.h>
@@ -49,7 +50,7 @@ int main(int argc, char **argv)
         mock_fail_at(MOCK_AUDIO_OUTPUT, 1, (int)0x8002ffff);
     }
 #endif
-    alarm(15);
+    opensles_test_watchdog(15);
     SLObjectItf engine_object, mix, player;
     SLEngineItf engine;
     SLPlayItf play;
@@ -101,7 +102,7 @@ int main(int argc, char **argv)
     assert(mock_live_resources() == 0);
 #endif
     assert(atomic_load(&callbacks) == 64);
-    alarm(0);
+    opensles_test_watchdog(0);
     printf("callback %sClear/Enqueue regression passed (64 loops)\n",
         stop_in_callback ? "Stop/" : "");
     return EXIT_SUCCESS;

@@ -1,10 +1,11 @@
 #include "threads.h"
+#include "../test_watchdog.h"
 
 #include <assert.h>
 #include <errno.h>
 #include <stdio.h>
 #include <unistd.h>
-#ifdef HAVE_SCE_THREADS
+#if defined(HAVE_SCE_THREADS) && !defined(OPENSLES_TEST_VITA_NATIVE)
 #include <psp2/kernel/error.h>
 #include "mock_control.h"
 #endif
@@ -49,7 +50,7 @@ static void assert_owned(void)
 
 int main(void)
 {
-    alarm(30);
+    opensles_test_watchdog(30);
     assert(sles_thread_create(NULL, worker, NULL) == EINVAL);
     sles_thread_t thread;
     assert(sles_thread_create(&thread, NULL, NULL) == EINVAL);
@@ -94,7 +95,7 @@ int main(void)
     assert(sles_mutex_destroy(&other) == 0);
     assert(sles_mutex_destroy(&mutex) == 0);
 
-#ifdef HAVE_SCE_THREADS
+#if defined(HAVE_SCE_THREADS) && !defined(OPENSLES_TEST_VITA_NATIVE)
     assert(mock_live_resources() == 0);
     mock_fail_at(MOCK_MUTEX_CREATE, 1, SCE_KERNEL_ERROR_NO_MEMORY);
     assert(sles_mutex_init(&mutex) == ENOMEM);
@@ -115,9 +116,11 @@ int main(void)
     assert(sles_thread_create(&thread, worker, &counter) == EIO);
     assert(thread == 12345 && mock_live_resources() == 0);
     puts("SCE-adapter mock: synchronization, ownership, stress and failure cleanup passed");
+#elif defined(HAVE_SCE_THREADS)
+    puts("Native SCE adapter: synchronization, ownership and stress passed");
 #else
     puts("POSIX adapter: synchronization, ownership and stress passed");
 #endif
-    alarm(0);
+    opensles_test_watchdog(0);
     return 0;
 }

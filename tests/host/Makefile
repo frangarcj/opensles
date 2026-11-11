@@ -19,6 +19,8 @@ SDL_CFLAGS := $(shell $(PKG_CONFIG) --cflags sdl2)
 SDL_LIBS := $(shell $(PKG_CONFIG) --libs sdl2)
 SNDFILE_CFLAGS := $(shell $(PKG_CONFIG) --cflags sndfile)
 SNDFILE_LIBS := $(shell $(PKG_CONFIG) --libs sndfile)
+GTEST_CFLAGS := $(shell $(PKG_CONFIG) --cflags gtest)
+GTEST_LIBS := $(shell $(PKG_CONFIG) --libs gtest)
 
 CFLAGS := -std=gnu17 -Wall -O0 -g $(INCLUDES) $(SDL_CFLAGS) $(SNDFILE_CFLAGS) \
 	-DUSE_OUTPUTMIXEXT -DUSE_SDL -DUSE_SNDFILE $(EXTRA_CFLAGS)
@@ -90,6 +92,8 @@ LIB_SOURCES := \
 LIB_OBJECTS := $(patsubst $(ROOT)/libopensles/%.c,$(LIB_BUILD_DIR)/%.o,$(LIB_SOURCES))
 
 TEST_PROGRAMS := \
+	$(TEST_BUILD_DIR)/BufferQueue_test \
+	$(TEST_BUILD_DIR)/slesTestSawtoothBufferQueue \
 	$(TEST_BUILD_DIR)/test_thread_pool \
 	$(TEST_BUILD_DIR)/test_threads \
 	$(TEST_BUILD_DIR)/test_callback_clear \
@@ -157,7 +161,20 @@ $(TEST_BUILD_DIR)/test_support.o: $(ROOT)/tests/host/test_support.c | $(TEST_BUI
 $(HOST_ADAPTER): $(ROOT)/tests/host/host_adapter.c | $(TEST_BUILD_DIR)
 	$(CC) $(CFLAGS) -c $< -o $@
 
-$(TEST_BUILD_DIR)/test_callback_clear: $(ROOT)/tests/host/test_callback_clear.c $(STATIC_LIB) $(TEST_SUPPORT) | $(TEST_BUILD_DIR)
+$(TEST_BUILD_DIR)/BufferQueue_test: $(ROOT)/tests/automated/BufferQueue_test.cpp $(STATIC_LIB) $(TEST_SUPPORT) | $(TEST_BUILD_DIR)
+	$(CXX) $(CXXFLAGS) $(GTEST_CFLAGS) $< $(TEST_SUPPORT) $(STATIC_LIB) $(GTEST_LIBS) $(LDLIBS) -o $@
+
+$(TEST_BUILD_DIR)/slesTestSawtoothBufferQueue: $(ROOT)/tests/examples/slesTestSawtoothBufferQueue.cpp $(STATIC_LIB) $(TEST_SUPPORT) | $(TEST_BUILD_DIR)
+	$(CXX) $(CXXFLAGS) $< $(TEST_SUPPORT) $(STATIC_LIB) $(LDLIBS) -o $@
+
+.PHONY: run-bufferqueue-original run-sawtooth-original
+run-bufferqueue-original: $(TEST_BUILD_DIR)/BufferQueue_test
+	SDL_AUDIODRIVER=dummy $(TEST_BUILD_DIR)/BufferQueue_test --gtest_output=xml:$(abspath $(TEST_BUILD_DIR))/bufferqueue-original.xml
+
+run-sawtooth-original: $(TEST_BUILD_DIR)/slesTestSawtoothBufferQueue
+	SDL_AUDIODRIVER=dummy $(TEST_BUILD_DIR)/slesTestSawtoothBufferQueue
+
+$(TEST_BUILD_DIR)/test_callback_clear: $(ROOT)/tests/host/test_callback_clear.c $(ROOT)/tests/test_watchdog.h $(STATIC_LIB) $(TEST_SUPPORT) | $(TEST_BUILD_DIR)
 	$(CC) $(CFLAGS) $< $(TEST_SUPPORT) $(STATIC_LIB) $(LDLIBS) -o $@
 
 .PHONY: run-callback-clear
@@ -168,7 +185,7 @@ ifeq ($(AUDIO_BACKEND),vita-mock)
 	$(TEST_BUILD_DIR)/test_callback_clear output-failure
 endif
 
-$(TEST_BUILD_DIR)/test_threads: $(ROOT)/tests/host/test_threads.c $(STATIC_LIB) | $(TEST_BUILD_DIR)
+$(TEST_BUILD_DIR)/test_threads: $(ROOT)/tests/host/test_threads.c $(ROOT)/tests/test_watchdog.h $(STATIC_LIB) | $(TEST_BUILD_DIR)
 	$(CC) $(CFLAGS) $< $(STATIC_LIB) $(LDLIBS) -o $@
 
 $(TEST_BUILD_DIR)/test_engine_failures: $(ROOT)/tests/host/test_engine_failures.c $(STATIC_LIB) $(TEST_SUPPORT) | $(TEST_BUILD_DIR)
@@ -178,7 +195,7 @@ $(TEST_BUILD_DIR)/test_engine_failures: $(ROOT)/tests/host/test_engine_failures.
 run-threads: $(TEST_BUILD_DIR)/test_threads
 	$(TEST_BUILD_DIR)/test_threads
 
-$(TEST_BUILD_DIR)/test_thread_pool: $(ROOT)/tests/host/test_thread_pool.c $(STATIC_LIB) $(TEST_SUPPORT) | $(TEST_BUILD_DIR)
+$(TEST_BUILD_DIR)/test_thread_pool: $(ROOT)/tests/host/test_thread_pool.c $(ROOT)/tests/test_watchdog.h $(STATIC_LIB) $(TEST_SUPPORT) | $(TEST_BUILD_DIR)
 	$(CC) $(CFLAGS) $< $(TEST_SUPPORT) $(STATIC_LIB) $(LDLIBS) -o $@
 
 .PHONY: run-thread-pool
@@ -188,7 +205,7 @@ run-thread-pool: $(TEST_BUILD_DIR)/test_thread_pool
 run-engine-failures: $(TEST_BUILD_DIR)/test_engine_failures
 	SDL_AUDIODRIVER=dummy $(TEST_BUILD_DIR)/test_engine_failures
 
-$(TEST_BUILD_DIR)/test_sync_destroy: $(ROOT)/tests/host/test_sync_destroy.c $(STATIC_LIB) $(TEST_SUPPORT) | $(TEST_BUILD_DIR)
+$(TEST_BUILD_DIR)/test_sync_destroy: $(ROOT)/tests/host/test_sync_destroy.c $(ROOT)/tests/test_watchdog.h $(STATIC_LIB) $(TEST_SUPPORT) | $(TEST_BUILD_DIR)
 	$(CC) $(CFLAGS) $< $(TEST_SUPPORT) $(STATIC_LIB) $(LDLIBS) -Wl,--wrap=audioPlayerTransportUpdate -o $@
 
 .PHONY: run-sync-destroy
