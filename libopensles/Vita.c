@@ -14,184 +14,151 @@
  * limitations under the License.
  */
 
-/** \file SDL.c SDL platform implementation */
-
 #include "sles_allinclusive.h"
-#include <vitasdk.h>
+#include <psp2/audioout.h>
+#include <psp2/kernel/threadmgr.h>
+#include <stdatomic.h>
 
-/** \brief Called by SDL to fill the next audio output buffer */
-static IEngine *slEngine;
+#if defined(HAVE_PTHREAD) || defined(HAVE_SCE_THREADS)
+#define USE_THREAD_BACKEND 1
+#endif
 
-static volatile int audio_shutdown_requested;
-static volatile int audio_thread_running;
-static int audio_port = -1;
-
-#ifdef HAVE_PTHREAD
-static pthread_t audio_thread_handle;
-static int audio_thread_valid;
+typedef struct {
+    IEngine *engine;
+    atomic_int shutdown;
+    int port;
+#ifdef USE_THREAD_BACKEND
+    sles_thread_t thread;
 #else
-static SceUID audio_thread_handle = -1;
+    SceUID thread;
 #endif
+    uint8_t buffers[SndFile_NUMBUFS][SndFile_BUFSIZE];
+} VitaAudio;
 
-uint8_t audio_buffers[SndFile_NUMBUFS][SndFile_BUFSIZE];
-
-static void reset_audio_backend_state(void) {
-	audio_shutdown_requested = 1;
-	audio_thread_running = 0;
-	audio_port = -1;
-#ifdef HAVE_PTHREAD
-	audio_thread_valid = 0;
-#else
-	audio_thread_handle = -1;
-#endif
-	slEngine = NULL;
-}
-
-static int opensles_output_freq(void) {
-	return (&_opensles_user_freq != NULL && _opensles_user_freq > 0)
-						 ? _opensles_user_freq
-						 : 44100;
-}
-
-static void fill_output_buffer(uint8_t *stream, SLuint32 size) {
-	sceClibMemset(stream, 0, (size_t)size);
-
-	if (NULL == slEngine) {
-		return;
-	}
-
-	COutputMix *outputMix = slEngine->mOutputMix;
-	if (NULL != outputMix) {
-		SLOutputMixExtItf OutputMixExt = &outputMix->mOutputMixExt.mItf;
-		IOutputMixExt_FillBuffer(OutputMixExt, stream, size);
-	}
-}
-
-#ifdef HAVE_PTHREAD
-static void *audioThread(void *arg) {
-#else
-static int audioThread(unsigned int args, void *arg) {
-#endif
-	(void)arg;
-#ifndef HAVE_PTHREAD
-	(void)args;
-#endif
-
-	int ch = sceAudioOutOpenPort(SCE_AUDIO_OUT_PORT_TYPE_BGM, SndFile_BUFSIZE / 4,
-															 opensles_output_freq(),
-															 SCE_AUDIO_OUT_MODE_STEREO);
-	if (ch < 0) {
-		SL_LOGE("Unable to open Vita audio port: 0x%x", ch);
-#ifdef HAVE_PTHREAD
-		return NULL;
-#else
-		return ch;
-#endif
-	} else {
-		SL_LOGI("Opened Vita audio port %d", ch);
-	}
-
-	audio_port = ch;
-	audio_thread_running = 1;
-	int res;
-
-	int vol_stereo[] = {32767, 32767};
-	res = sceAudioOutSetVolume(
-			ch,
-			(SceAudioOutChannelFlag)(SCE_AUDIO_VOLUME_FLAG_L_CH | SCE_AUDIO_VOLUME_FLAG_R_CH),
-			vol_stereo);
-	if (res < 0) {
-		SL_LOGE("Unable to set Vita audio volume on port %d: 0x%x", ch, res);
-		goto exit_thread;
-	}
-
-	int buf_idx = 0;
-
-	while (!audio_shutdown_requested) {
-		uint8_t *stream = audio_buffers[buf_idx];
-		buf_idx = (buf_idx + 1) % SndFile_NUMBUFS;
-
-		fill_output_buffer(stream, (SLuint32)SndFile_BUFSIZE);
-		res = sceAudioOutOutput(ch, stream);
-		if (res < 0) {
-			SL_LOGE("Vita audio output failed on port %d: 0x%x", ch, res);
-			break;
-		}
-	}
-
-	exit_thread:
-	if (audio_port == ch) {
-		sceAudioOutReleasePort(ch);
-		audio_port = -1;
-	}
-	audio_thread_running = 0;
-
-#ifdef HAVE_PTHREAD
-	return NULL;
-#else
-	return 0;
-#endif
-}
-
-/** \brief Called during slCreateEngine */
-
-void SDL_open(IEngine *thisEngine)
+static int output_frequency(void)
 {
-	SDL_close();
-	if (NULL == thisEngine) {
-		return;
-	}
-	slEngine = thisEngine;
-	audio_shutdown_requested = 0;
-	audio_thread_running = 0;
-#ifdef HAVE_PTHREAD
-	audio_thread_valid = (0 == pthread_create(&audio_thread_handle, NULL, audioThread, NULL));
-	if (!audio_thread_valid) {
-		SL_LOGE("Unable to create OpenSLES playback thread");
-		reset_audio_backend_state();
-	}
-#else
-	audio_thread_handle = sceKernelCreateThread("OpenSLES Playback", &audioThread, 0x10000100,
-                                                0x10000, 0, 0, NULL);
-	if (audio_thread_handle < 0) {
-		SL_LOGE("Unable to create OpenSLES playback thread: 0x%x", audio_thread_handle);
-		reset_audio_backend_state();
-		return;
-	}
-
-	int res = sceKernelStartThread(audio_thread_handle, 0, NULL);
-	if (res < 0) {
-		SL_LOGE("Unable to start OpenSLES playback thread %d: 0x%x", audio_thread_handle, res);
-		sceKernelDeleteThread(audio_thread_handle);
-		reset_audio_backend_state();
-	}
-#endif
+    return &_opensles_user_freq != NULL && _opensles_user_freq > 0 ?
+        _opensles_user_freq : 44100;
 }
 
-
-/** \brief Called during Object::Destroy */
-
-void SDL_close(void)
+static void fill_output_buffer(VitaAudio *audio, uint8_t *stream)
 {
-	audio_shutdown_requested = 1;
-	slEngine = NULL;
-#ifdef HAVE_PTHREAD
-	if (audio_thread_valid) {
-		pthread_join(audio_thread_handle, NULL);
-		audio_thread_valid = 0;
-	}
-#else
-	if (audio_thread_handle >= 0) {
-		sceKernelWaitThreadEnd(audio_thread_handle, NULL, NULL);
-		sceKernelDeleteThread(audio_thread_handle);
-		audio_thread_handle = -1;
-	}
+    memset(stream, 0, SndFile_BUFSIZE);
+    interface_lock_exclusive(audio->engine);
+    COutputMix *mix = audio->engine->mOutputMix;
+    interface_unlock_exclusive(audio->engine);
+    if (mix != NULL) {
+        IOutputMixExt_FillBuffer(&mix->mOutputMixExt.mItf, stream, SndFile_BUFSIZE);
+    }
+}
+
+static void *audio_thread(void *arg)
+{
+    VitaAudio *audio = (VitaAudio *)arg;
+    unsigned index = 0;
+    int output_failed = 0;
+    while (!atomic_load_explicit(&audio->shutdown, memory_order_acquire)) {
+        uint8_t *stream = audio->buffers[index];
+        index = (index + 1) % SndFile_NUMBUFS;
+        fill_output_buffer(audio, stream);
+        if (!output_failed) {
+            int result = sceAudioOutOutput(audio->port, stream);
+            if (result < 0) {
+                SL_LOGE("Vita audio output failed on port %d: 0x%x", audio->port, result);
+                output_failed = 1;
+            }
+        }
+        if (output_failed) {
+            // Clear, Stop and Destroy still need mixer acknowledgements after device failure.
+            sceKernelDelayThread(10000);
+        }
+    }
+    return NULL;
+}
+
+#ifndef USE_THREAD_BACKEND
+static int legacy_audio_thread(SceSize size, void *arg)
+{
+    if (size != sizeof(VitaAudio *)) {
+        return EINVAL;
+    }
+    VitaAudio *audio;
+    memcpy(&audio, arg, sizeof(audio));
+    audio_thread(audio);
+    return 0;
+}
 #endif
-	if (audio_port >= 0) {
-		sceAudioOutReleasePort(audio_port);
-		audio_port = -1;
-	}
-	audio_thread_running = 0;
-	audio_port = -1;
-	slEngine = NULL;
+
+SLresult SDL_open(IEngine *engine)
+{
+    VitaAudio *audio = (VitaAudio *)calloc(1, sizeof(*audio));
+    if (audio == NULL) {
+        return SL_RESULT_MEMORY_FAILURE;
+    }
+    audio->engine = engine;
+    atomic_init(&audio->shutdown, 0);
+    audio->port = sceAudioOutOpenPort(SCE_AUDIO_OUT_PORT_TYPE_BGM, SndFile_BUFSIZE / 4,
+        output_frequency(), SCE_AUDIO_OUT_MODE_STEREO);
+    if (audio->port < 0) {
+        SL_LOGE("Unable to open Vita audio port: 0x%x", audio->port);
+        free(audio);
+        return SL_RESULT_RESOURCE_ERROR;
+    }
+    int volume[] = {32767, 32767};
+    int result = sceAudioOutSetVolume(audio->port,
+        SCE_AUDIO_VOLUME_FLAG_L_CH | SCE_AUDIO_VOLUME_FLAG_R_CH, volume);
+    if (result < 0) {
+        SL_LOGE("Unable to set Vita audio volume: 0x%x", result);
+        goto fail;
+    }
+#ifdef USE_THREAD_BACKEND
+    result = sles_thread_create(&audio->thread, audio_thread, audio);
+    if (result != 0) {
+        SL_LOGE("Unable to create OpenSLES playback thread: %d", result);
+        goto fail;
+    }
+#else
+    audio->thread = sceKernelCreateThread("OpenSLES Playback", legacy_audio_thread,
+        0x10000100, 0x10000, 0, 0, NULL);
+    if (audio->thread < 0) {
+        result = audio->thread;
+        goto fail;
+    }
+    result = sceKernelStartThread(audio->thread, sizeof(audio), &audio);
+    if (result < 0) {
+        sceKernelDeleteThread(audio->thread);
+        goto fail;
+    }
+#endif
+    engine->mAudioBackend = audio;
+    return SL_RESULT_SUCCESS;
+
+fail:
+    sceAudioOutReleasePort(audio->port);
+    free(audio);
+    return SL_RESULT_RESOURCE_ERROR;
+}
+
+void SDL_close(IEngine *engine)
+{
+    VitaAudio *audio = (VitaAudio *)engine->mAudioBackend;
+    if (audio == NULL) {
+        return;
+    }
+    atomic_store_explicit(&audio->shutdown, 1, memory_order_release);
+#ifdef USE_THREAD_BACKEND
+    int result = sles_thread_join(audio->thread);
+#else
+    int result = sceKernelWaitThreadEnd(audio->thread, NULL, NULL);
+    if (result >= 0) {
+        result = sceKernelDeleteThread(audio->thread);
+    }
+#endif
+    if (result != 0) {
+        SL_LOGE("Unable to join OpenSLES playback thread: %d", result);
+        abort();
+    }
+    sceAudioOutReleasePort(audio->port);
+    engine->mAudioBackend = NULL;
+    free(audio);
 }

@@ -1,5 +1,7 @@
 ROOT := ../..
-BUILD_DIR := $(ROOT)/build/host-tests
+THREAD_BACKEND ?= pthread
+AUDIO_BACKEND ?= sdl
+BUILD_DIR ?= $(ROOT)/build/host-tests-$(THREAD_BACKEND)
 LIB_BUILD_DIR := $(BUILD_DIR)/libopensles
 TEST_BUILD_DIR := $(BUILD_DIR)/tests
 STATIC_LIB := $(BUILD_DIR)/libOpenSLES-host.a
@@ -19,11 +21,33 @@ SNDFILE_CFLAGS := $(shell $(PKG_CONFIG) --cflags sndfile)
 SNDFILE_LIBS := $(shell $(PKG_CONFIG) --libs sndfile)
 
 CFLAGS := -std=gnu17 -Wall -O0 -g $(INCLUDES) $(SDL_CFLAGS) $(SNDFILE_CFLAGS) \
-	-DUSE_OUTPUTMIXEXT -DUSE_SDL -DUSE_SNDFILE -DHAVE_PTHREAD
+	-DUSE_OUTPUTMIXEXT -DUSE_SDL -DUSE_SNDFILE $(EXTRA_CFLAGS)
 CXXFLAGS := -std=gnu++17 -Wall -O0 -g $(INCLUDES) $(SDL_CFLAGS) $(SNDFILE_CFLAGS)
-LDLIBS := $(SDL_LIBS) $(SNDFILE_LIBS) -lpthread -lm
+CXXFLAGS += $(EXTRA_CFLAGS)
+LDLIBS := $(SDL_LIBS) $(SNDFILE_LIBS) -lpthread -lm $(EXTRA_LDFLAGS)
+
+ifeq ($(THREAD_BACKEND),pthread)
+CFLAGS += -DHAVE_PTHREAD
+else ifeq ($(THREAD_BACKEND),sce-mock)
+CFLAGS += -DHAVE_SCE_THREADS -I$(ROOT)/tests/host/sce_mock
+else
+$(error THREAD_BACKEND must be pthread or sce-mock)
+endif
+
+ifeq ($(AUDIO_BACKEND),sdl)
+AUDIO_SOURCE := $(ROOT)/libopensles/SDL.c
+else ifeq ($(AUDIO_BACKEND),vita-mock)
+ifneq ($(THREAD_BACKEND),sce-mock)
+$(error AUDIO_BACKEND=vita-mock requires THREAD_BACKEND=sce-mock)
+endif
+AUDIO_SOURCE := $(ROOT)/libopensles/Vita.c
+CFLAGS += -DOPENSLES_TEST_VITA_AUDIO
+else
+$(error AUDIO_BACKEND must be sdl or vita-mock)
+endif
 
 LIB_SOURCES := \
+	$(ROOT)/libopensles/threads.c \
 	$(ROOT)/libopensles/OpenSLESUT.c \
 	$(ROOT)/libopensles/MPH_to.c \
 	$(ROOT)/libopensles/OpenSLES_IID.c \
@@ -34,7 +58,7 @@ LIB_SOURCES := \
 	$(ROOT)/libopensles/sles.c \
 	$(ROOT)/libopensles/sllog.c \
 	$(ROOT)/libopensles/SndFile.c \
-	$(ROOT)/libopensles/SDL.c \
+	$(AUDIO_SOURCE) \
 	$(ROOT)/libopensles/IOutputMix.c \
 	$(ROOT)/libopensles/IOutputMixExt.c \
 	$(ROOT)/libopensles/sync.c \
@@ -66,6 +90,9 @@ LIB_SOURCES := \
 LIB_OBJECTS := $(patsubst $(ROOT)/libopensles/%.c,$(LIB_BUILD_DIR)/%.o,$(LIB_SOURCES))
 
 TEST_PROGRAMS := \
+	$(TEST_BUILD_DIR)/test_thread_pool \
+	$(TEST_BUILD_DIR)/test_threads \
+	$(TEST_BUILD_DIR)/test_callback_clear \
 	$(TEST_BUILD_DIR)/slesTestLoopUri \
 	$(TEST_BUILD_DIR)/slesTestPlayUri \
 	$(TEST_BUILD_DIR)/slesTestSlowDownUri \
@@ -82,24 +109,91 @@ TEST_PROGRAMS := \
 
 TEST_SUPPORT := $(TEST_BUILD_DIR)/test_support.o
 
+ifeq ($(shell uname -s),Linux)
+TEST_PROGRAMS += $(TEST_BUILD_DIR)/test_sync_destroy
+endif
+
+ifeq ($(THREAD_BACKEND),sce-mock)
+LIB_OBJECTS += $(LIB_BUILD_DIR)/mock_sce.o
+TEST_PROGRAMS += $(TEST_BUILD_DIR)/test_engine_failures
+endif
+ifeq ($(AUDIO_BACKEND),vita-mock)
+LIB_OBJECTS += $(LIB_BUILD_DIR)/mock_audio.o
+endif
+
 .PHONY: all clean smoke run-loopuri run-playuri run-slowdown run-getposition run-playuri2 run-playstates run-manyplayers run-churn run-urimime-host run-srcsink-host run-engine-host run-object-host run-configbq-host
 
 all: $(TEST_PROGRAMS)
+
+.PHONY: FORCE
+$(BUILD_DIR)/.build-config: FORCE | $(BUILD_DIR)
+	@printf '%s\n' '$(CC) $(CFLAGS) $(CXXFLAGS) $(LDLIBS)' > $@.tmp
+	@cmp -s $@.tmp $@ || cp $@.tmp $@
+	@rm -f $@.tmp
+
+$(LIB_OBJECTS) $(TEST_SUPPORT) $(HOST_ADAPTER): $(BUILD_DIR)/.build-config
+
+-include $(LIB_OBJECTS:.o=.d)
 
 $(BUILD_DIR) $(LIB_BUILD_DIR) $(TEST_BUILD_DIR):
 	mkdir -p $@
 
 $(STATIC_LIB): $(LIB_OBJECTS) | $(BUILD_DIR)
+	rm -f $@
 	$(AR) -rc $@ $^
 
 $(LIB_BUILD_DIR)/%.o: $(ROOT)/libopensles/%.c | $(LIB_BUILD_DIR)
-	$(CC) $(CFLAGS) $(if $(filter SDL.c,$(notdir $<)),-include SDL.h,) -c $< -o $@
+	$(CC) $(CFLAGS) $(if $(filter SDL.c,$(notdir $<)),-include SDL.h,) -MMD -MP -c $< -o $@
+
+$(LIB_BUILD_DIR)/mock_sce.o: $(ROOT)/tests/host/sce_mock/mock_sce.c | $(LIB_BUILD_DIR)
+	$(CC) $(CFLAGS) -MMD -MP -c $< -o $@
+
+$(LIB_BUILD_DIR)/mock_audio.o: $(ROOT)/tests/host/sce_mock/mock_audio.c | $(LIB_BUILD_DIR)
+	$(CC) $(CFLAGS) -MMD -MP -c $< -o $@
 
 $(TEST_BUILD_DIR)/test_support.o: $(ROOT)/tests/host/test_support.c | $(TEST_BUILD_DIR)
 	$(CC) $(CFLAGS) -c $< -o $@
 
 $(HOST_ADAPTER): $(ROOT)/tests/host/host_adapter.c | $(TEST_BUILD_DIR)
 	$(CC) $(CFLAGS) -c $< -o $@
+
+$(TEST_BUILD_DIR)/test_callback_clear: $(ROOT)/tests/host/test_callback_clear.c $(STATIC_LIB) $(TEST_SUPPORT) | $(TEST_BUILD_DIR)
+	$(CC) $(CFLAGS) $< $(TEST_SUPPORT) $(STATIC_LIB) $(LDLIBS) -o $@
+
+.PHONY: run-callback-clear
+run-callback-clear: $(TEST_BUILD_DIR)/test_callback_clear
+	SDL_AUDIODRIVER=dummy $(TEST_BUILD_DIR)/test_callback_clear
+	SDL_AUDIODRIVER=dummy $(TEST_BUILD_DIR)/test_callback_clear stop
+ifeq ($(AUDIO_BACKEND),vita-mock)
+	$(TEST_BUILD_DIR)/test_callback_clear output-failure
+endif
+
+$(TEST_BUILD_DIR)/test_threads: $(ROOT)/tests/host/test_threads.c $(STATIC_LIB) | $(TEST_BUILD_DIR)
+	$(CC) $(CFLAGS) $< $(STATIC_LIB) $(LDLIBS) -o $@
+
+$(TEST_BUILD_DIR)/test_engine_failures: $(ROOT)/tests/host/test_engine_failures.c $(STATIC_LIB) $(TEST_SUPPORT) | $(TEST_BUILD_DIR)
+	$(CC) $(CFLAGS) $< $(TEST_SUPPORT) $(STATIC_LIB) $(LDLIBS) -o $@
+
+.PHONY: run-threads run-engine-failures
+run-threads: $(TEST_BUILD_DIR)/test_threads
+	$(TEST_BUILD_DIR)/test_threads
+
+$(TEST_BUILD_DIR)/test_thread_pool: $(ROOT)/tests/host/test_thread_pool.c $(STATIC_LIB) $(TEST_SUPPORT) | $(TEST_BUILD_DIR)
+	$(CC) $(CFLAGS) $< $(TEST_SUPPORT) $(STATIC_LIB) $(LDLIBS) -o $@
+
+.PHONY: run-thread-pool
+run-thread-pool: $(TEST_BUILD_DIR)/test_thread_pool
+	$(TEST_BUILD_DIR)/test_thread_pool
+
+run-engine-failures: $(TEST_BUILD_DIR)/test_engine_failures
+	SDL_AUDIODRIVER=dummy $(TEST_BUILD_DIR)/test_engine_failures
+
+$(TEST_BUILD_DIR)/test_sync_destroy: $(ROOT)/tests/host/test_sync_destroy.c $(STATIC_LIB) $(TEST_SUPPORT) | $(TEST_BUILD_DIR)
+	$(CC) $(CFLAGS) $< $(TEST_SUPPORT) $(STATIC_LIB) $(LDLIBS) -Wl,--wrap=audioPlayerTransportUpdate -o $@
+
+.PHONY: run-sync-destroy
+run-sync-destroy: $(TEST_BUILD_DIR)/test_sync_destroy
+	SDL_AUDIODRIVER=dummy $(TEST_BUILD_DIR)/test_sync_destroy
 
 $(TEST_BUILD_DIR)/%: $(ROOT)/tests/mimeUri/%.cpp $(STATIC_LIB) $(TEST_SUPPORT) | $(TEST_BUILD_DIR)
 	$(CXX) $(CXXFLAGS) $< $(TEST_SUPPORT) $(STATIC_LIB) $(LDLIBS) -o $@

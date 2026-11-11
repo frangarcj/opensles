@@ -25,22 +25,40 @@ SLresult CEngine_Realize(void *self, SLboolean async)
 {
     CEngine *this = (CEngine *) self;
     // create the sync thread
-    int err = pthread_create(&this->mSyncThread, (const pthread_attr_t *) NULL, sync_start, this);
+    int err = sles_thread_create(&this->mSyncThread, sync_start, this);
     SLresult result = err_to_result(err);
     if (SL_RESULT_SUCCESS != result)
         return result;
+    this->mSyncThreadValid = SL_BOOLEAN_TRUE;
     // initialize the thread pool for asynchronous operations
     result = ThreadPool_init(&this->mEngine.mThreadPool, 0, 0);
-    if (SL_RESULT_SUCCESS != result) {
-        this->mEngine.mShutdown = SL_BOOLEAN_TRUE;
-        object_cond_broadcast(&this->mObject);
-        (void) pthread_join(this->mSyncThread, (void **) NULL);
-        return result;
-    }
+    if (SL_RESULT_SUCCESS != result)
+        goto fail;
 #ifdef USE_SDL
-    SDL_open(&this->mEngine);
+    result = SDL_open(&this->mEngine);
+    if (SL_RESULT_SUCCESS != result)
+        goto fail;
 #endif
     return SL_RESULT_SUCCESS;
+
+fail:
+    object_lock_exclusive(&this->mObject);
+    this->mEngine.mShutdown = SL_BOOLEAN_TRUE;
+    object_cond_broadcast(&this->mObject);
+    // The sync thread needs this mutex before it can observe shutdown.
+    object_unlock_exclusive(&this->mObject);
+    ThreadPool_deinit(&this->mEngine.mThreadPool);
+    int joinResult = sles_thread_join(this->mSyncThread);
+    if (joinResult != 0) {
+        SL_LOGE("Unable to join OpenSLES sync thread: %d", joinResult);
+        abort();
+    }
+    object_lock_exclusive(&this->mObject);
+    this->mSyncThreadValid = SL_BOOLEAN_FALSE;
+    this->mEngine.mShutdown = SL_BOOLEAN_FALSE;
+    this->mEngine.mShutdownAck = SL_BOOLEAN_FALSE;
+    object_unlock_exclusive(&this->mObject);
+    return result;
 }
 
 
@@ -74,9 +92,7 @@ void CEngine_Destroy(void *self)
     }
 
     // If engine was created but not realized, there will be no sync thread yet
-    pthread_t zero;
-    memset(&zero, 0, sizeof(pthread_t));
-    if (0 != memcmp(&zero, &this->mSyncThread, sizeof(pthread_t))) {
+    if (this->mSyncThreadValid) {
 
         // Announce to the sync thread that engine is shutting down; it polls so should see it soon
         this->mEngine.mShutdown = SL_BOOLEAN_TRUE;
@@ -87,7 +103,12 @@ void CEngine_Destroy(void *self)
             object_cond_wait(&this->mObject);
         }
         // The sync thread has exited, now collect it.
-        (void) pthread_join(this->mSyncThread, (void **) NULL);
+        int joinResult = sles_thread_join(this->mSyncThread);
+        if (joinResult != 0) {
+            SL_LOGE("Unable to join OpenSLES sync thread: %d", joinResult);
+            abort();
+        }
+        this->mSyncThreadValid = SL_BOOLEAN_FALSE;
 
     }
 
@@ -117,7 +138,7 @@ void CEngine_Destroy(void *self)
     // IObject_Destroy calls this hook with engine mutex locked. SDL_close joins the audio
     // thread, which can contend on the same engine lock while leaving fill_output_buffer.
     object_unlock_exclusive(&this->mObject);
-    SDL_close();
+    SDL_close(&this->mEngine);
     object_lock_exclusive(&this->mObject);
 #endif
 

@@ -23,7 +23,7 @@
 #include <string.h> // memcmp
 #include <stdio.h>  // debugging
 #include <assert.h> // debugging
-#include <pthread.h>
+#include "threads.h"
 #include <unistd.h> // usleep
 #include <errno.h>
 
@@ -238,7 +238,7 @@ struct SndFile {
     SLchar *mPathname;
     SNDFILE *mSNDFILE;
     SF_INFO mSfInfo;
-    pthread_mutex_t mMutex; // protects mSNDFILE only
+    sles_mutex_t mMutex; // protects mSNDFILE only
     SLboolean mEOF;         // sf_read returned zero sample frames
     SLuint32 mWhich;        // which buffer to use next
     short mBuffer[SndFile_BUFSIZE * SndFile_NUMBUFS];
@@ -294,13 +294,14 @@ typedef struct Object_interface {
 #if USE_PROFILES & USE_PROFILES_BASE
     SLint32 mPriority;
 #endif
-    pthread_mutex_t mMutex;
+    sles_mutex_t mMutex;
 #ifdef USE_DEBUG
-    pthread_t mOwner;
+    sles_thread_t mOwner;
     const char *mFile;
     int mLine;
 #endif
-    pthread_cond_t mCond;
+    sles_cond_t mCond;
+    unsigned mSyncRefCount;
     SLuint8 mState;                 // really SLuint32, but SLuint8 to save space
 #if USE_PROFILES & USE_PROFILES_BASE
     SLuint8 mPreemptable;           // really SLboolean, but SLuint8 to save space
@@ -546,6 +547,7 @@ typedef struct Engine_interface {
     SLboolean mLossOfControlGlobal;
 #ifdef USE_SDL
     COutputMix *mOutputMix; // SDL pulls PCM from an arbitrary IOutputMixExt
+    void *mAudioBackend;
 #endif
     // Each engine is its own universe.
     SLuint32 mInstanceCount;
@@ -556,6 +558,10 @@ typedef struct Engine_interface {
     SLboolean mShutdown;
     SLboolean mShutdownAck;
     ThreadPool mThreadPool; // for asynchronous operations
+#ifdef USE_OUTPUTMIXEXT
+    sles_thread_t mMixerThread;
+    SLboolean mMixerThreadValid;
+#endif
 #if defined(ANDROID) && !defined(USE_BACKPORT)
     SLuint32 mEqNumPresets;
     char** mEqPresetNames;
@@ -808,7 +814,7 @@ typedef struct {
     IObject *mThis;
     SLboolean mInCriticalSection;
     SLuint32 mWaiting;  // number of threads waiting
-    pthread_t mOwner;
+    sles_thread_t mOwner;
 } IThreadSync;
 
 typedef struct {
@@ -1072,7 +1078,8 @@ typedef struct {
     // optional interfaces
     IDeviceVolume mDeviceVolume;
     // rest of fields are not related to the interfaces
-    pthread_t mSyncThread;
+    sles_thread_t mSyncThread;
+    SLboolean mSyncThreadValid;
 } CEngine;
 
 typedef struct {
@@ -1256,8 +1263,8 @@ extern void COutputMix_Destroy(void *self);
 extern bool COutputMix_PreDestroy(void *self);
 
 #ifdef USE_SDL
-extern void SDL_open(IEngine *thisEngine);
-extern void SDL_close(void);
+extern SLresult SDL_open(IEngine *thisEngine);
+extern void SDL_close(IEngine *thisEngine);
 #endif
 #define SL_OBJECT_STATE_REALIZING_1  ((SLuint32) 0x4) // async realize on work queue
 #define SL_OBJECT_STATE_REALIZING_2  ((SLuint32) 0x5) // sync realize, or async realize hook
@@ -1355,6 +1362,10 @@ extern SLresult IBufferQueue_RegisterCallback(SLBufferQueueItf self,
     slBufferQueueCallback callback, void *pContext);
 extern void IBufferQueue_Destroy(IBufferQueue *this);
 extern void IBufferQueue_ReleaseArrayBuffers(IBufferQueue *this);
+#ifdef USE_OUTPUTMIXEXT
+extern void IBufferQueue_ClearLocked(IBufferQueue *this);
+extern SLboolean IEngine_IsMixerThread(IEngine *this);
+#endif
 
 extern bool IsInterfaceInitialized(IObject *this, unsigned MPH);
 extern SLresult CheckOutputMixReverbCompatibility(const ClassTable *class__, unsigned exposedMask);

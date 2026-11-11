@@ -17,6 +17,13 @@ on:
 jobs:
   host-tests:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        backend: [pthread, sce-mock]
+    env:
+      THREAD_BACKEND: ${{ matrix.backend }}
 
     steps:
       - name: Checkout
@@ -46,8 +53,39 @@ jobs:
           make run-object-host
           make run-configbq-host
 
+      - name: Run synchronization regressions
+        working-directory: tests/host
+        run: |
+          timeout 60 make run-threads run-thread-pool run-callback-clear run-sync-destroy
+          if [ "$THREAD_BACKEND" = sce-mock ]; then
+            timeout 60 make run-engine-failures
+          fi
+
+      - name: Run debug ownership checks
+        working-directory: tests/host
+        run: |
+          make -j"$(nproc)" BUILD_DIR=../../build/host-debug EXTRA_CFLAGS=-DUSE_DEBUG all
+          timeout 60 make BUILD_DIR=../../build/host-debug EXTRA_CFLAGS=-DUSE_DEBUG run-threads run-thread-pool run-callback-clear run-sync-destroy
+          if [ "$THREAD_BACKEND" = sce-mock ]; then
+            timeout 60 make BUILD_DIR=../../build/host-debug EXTRA_CFLAGS=-DUSE_DEBUG run-engine-failures
+          fi
+
       - name: Run object-limit pressure tests
         working-directory: tests/host
         run: |
           make run-manyplayers
           make run-churn
+
+      - name: Exercise Vita playback startup and device failures
+        if: matrix.backend == 'sce-mock'
+        working-directory: tests/host
+        env:
+          ASAN_OPTIONS: detect_leaks=1:halt_on_error=1
+          UBSAN_OPTIONS: halt_on_error=1
+        run: |
+          export AUDIO_BACKEND=vita-mock
+          export BUILD_DIR=../../build/vita-mock-sanitized
+          export EXTRA_CFLAGS='-DUSE_DEBUG -fsanitize=address,undefined -fno-omit-frame-pointer'
+          export EXTRA_LDFLAGS='-fsanitize=address,undefined'
+          make -j"$(nproc)" all
+          timeout 90 make run-threads run-thread-pool run-callback-clear run-engine-failures run-sync-destroy

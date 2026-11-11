@@ -42,7 +42,7 @@ static void SDLCALL SDL_callback(void *context, Uint8 *stream, int len)
 
 /** \brief Called during slCreateEngine to initialize SDL */
 
-void SDL_open(IEngine *thisEngine)
+SLresult SDL_open(IEngine *thisEngine)
 {
     SDL_AudioSpec fmt;
     fmt.freq = &_opensles_user_freq!=NULL?_opensles_user_freq:44100;
@@ -58,17 +58,22 @@ void SDL_open(IEngine *thisEngine)
 
     if (SDL_OpenAudio(&fmt, NULL) < 0) {
         SL_LOGE("Unable to open audio: %s", SDL_GetError());
-        exit(EXIT_FAILURE);
+        return SL_RESULT_RESOURCE_ERROR;
     }
 
+    thisEngine->mAudioBackend = thisEngine;
     // Start the callback thread immediately so mixer-driven lifecycle work can progress.
     SDL_PauseAudio(0);
+    return SL_RESULT_SUCCESS;
 }
 
 
 /** \brief Called during Object::Destroy for engine to shutdown SDL */
 
-void SDL_close(void)
+void SDL_close(IEngine *thisEngine)
 {
-    SDL_CloseAudio();
+    if (thisEngine->mAudioBackend != NULL) {
+        SDL_CloseAudio();
+        thisEngine->mAudioBackend = NULL;
+    }
 }

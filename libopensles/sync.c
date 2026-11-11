@@ -22,20 +22,12 @@
 
 static void sync_wait_for_work(CEngine *this)
 {
-    struct timespec wake_time;
-    clock_gettime(CLOCK_REALTIME, &wake_time);
-    wake_time.tv_nsec += 20 * 1000 * 1000;
-    if (wake_time.tv_nsec >= 1000000000L) {
-        wake_time.tv_sec += 1;
-        wake_time.tv_nsec -= 1000000000L;
-    }
-
-    while (!this->mEngine.mShutdown && !this->m3DCommit.mWaiting && !this->mEngine.mChangedMask) {
-        int ok = pthread_cond_timedwait(&this->mObject.mCond, &this->mObject.mMutex, &wake_time);
-        if ((0 == ok) || (ETIMEDOUT == ok)) {
-            break;
+    if (!this->mEngine.mShutdown && !this->m3DCommit.mWaiting && !this->mEngine.mChangedMask) {
+        int ok = object_cond_timedwait(&this->mObject, 20000);
+        if (ok != 0 && ok != ETIMEDOUT) {
+            SL_LOGE("OpenSLES synchronization wait failed: %d", ok);
+            abort();
         }
-        assert(false);
     }
 }
 
@@ -78,13 +70,22 @@ void *sync_start(void *arg)
             unsigned i = ctz(combinedMask);
             assert(MAX_INSTANCE > i);
             combinedMask &= ~(1 << i);
+            object_lock_exclusive(&this->mObject);
             IObject *instance = (IObject *) this->mEngine.mInstances[i];
+            if (instance != NULL) {
+                // Publication and lifetime acquisition must be one atomic decision.
+                __atomic_fetch_add(&instance->mSyncRefCount, 1, __ATOMIC_RELAXED);
+            }
+            object_unlock_exclusive(&this->mObject);
             // Could be NULL during construct or destroy
             if (NULL == instance) {
                 continue;
             }
 
             object_lock_exclusive(instance);
+            if (instance->mState == SL_OBJECT_STATE_DESTROYING) {
+                goto release_instance;
+            }
             unsigned attributesMask = instance->mAttributesMask;
             instance->mAttributesMask = 0;
 
@@ -108,6 +109,12 @@ void *sync_start(void *arg)
                 object_unlock_exclusive(instance);
                 break;
             }
+            object_lock_exclusive(instance);
+release_instance:
+            if (__atomic_sub_fetch(&instance->mSyncRefCount, 1, __ATOMIC_ACQ_REL) == 0) {
+                object_cond_broadcast(instance);
+            }
+            object_unlock_exclusive(instance);
         }
     }
     return NULL;
