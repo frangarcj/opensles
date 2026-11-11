@@ -18,7 +18,7 @@ on:
 jobs:
   host-tests:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -40,6 +40,7 @@ jobs:
         run: make -j"$(nproc)"
 
       - name: Run URI and state tests
+        timeout-minutes: 5
         working-directory: tests/host
         run: |
           make run-playstates
@@ -74,8 +75,7 @@ jobs:
       - name: Run object-limit pressure tests
         working-directory: tests/host
         run: |
-          make run-manyplayers
-          make run-churn
+          timeout -k 5s 360 make run-manyplayers run-churn
 
       - name: Exercise Vita playback startup and device failures
         if: matrix.backend == 'sce-mock'
