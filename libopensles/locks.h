@@ -32,6 +32,7 @@ extern void object_cond_wait(IObject *this);
 #endif
 extern void object_cond_signal(IObject *this);
 extern void object_cond_broadcast(IObject *this);
+extern int object_cond_timedwait(IObject *this, uint32_t timeout_us);
 
 #ifdef USE_DEBUG
 #define object_lock_exclusive(this) object_lock_exclusive_((this), __FILE__, __LINE__)

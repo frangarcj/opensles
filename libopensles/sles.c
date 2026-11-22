@@ -114,7 +114,7 @@ SLresult AcquireStrongRef(IObject *object, SLuint32 expectedObjectID)
 void ReleaseStrongRefAndUnlockExclusive(IObject *object)
 {
 #ifdef USE_DEBUG
-    assert(pthread_equal(pthread_self(), object->mOwner));
+    assert(sles_thread_equal(sles_thread_self(), object->mOwner));
 #endif
     assert(0 < object->mStrongRefCount);
     if ((0 == --object->mStrongRefCount) && (SL_OBJECT_STATE_DESTROYING == object->mState)) {
@@ -1039,6 +1039,17 @@ IObject *construct(const ClassTable *class__, unsigned exposedMask, SLEngineItf 
     // Do not change this to malloc; we depend on the object being memset to zero
     this = (IObject *) calloc(1, class__->mSize);
     if (NULL != this) {
+        int err = sles_mutex_init(&this->mMutex);
+        if (err != 0) {
+            free(this);
+            return NULL;
+        }
+        err = sles_cond_init(&this->mCond, &this->mMutex);
+        if (err != 0) {
+            sles_mutex_destroy(&this->mMutex);
+            free(this);
+            return NULL;
+        }
         unsigned lossOfControlMask = 0;
         // a NULL engine means we are constructing the engine
         IEngine *thisEngine = (IEngine *) engine;
@@ -1049,6 +1060,8 @@ IObject *construct(const ClassTable *class__, unsigned exposedMask, SLEngineItf 
             if (MAX_INSTANCE <= thisEngine->mInstanceCount) {
                 SL_LOGE("Too many objects");
                 interface_unlock_exclusive(thisEngine);
+                sles_cond_destroy(&this->mCond);
+                sles_mutex_destroy(&this->mMutex);
                 free(this);
                 return NULL;
             }

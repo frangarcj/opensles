@@ -1,6 +1,7 @@
 name: OpenSLES Host Tests
 
 on:
+  workflow_dispatch:
   push:
     paths:
       - 'libopensles/**'
@@ -17,6 +18,13 @@ on:
 jobs:
   host-tests:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        backend: [pthread, sce-mock]
+    env:
+      THREAD_BACKEND: ${{ matrix.backend }}
 
     steps:
       - name: Checkout
@@ -25,13 +33,14 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential pkg-config libsdl2-dev libsndfile1-dev sox
+          sudo apt-get install -y build-essential pkg-config libsdl2-dev libsndfile1-dev libgtest-dev sox
 
       - name: Build host test binaries
         working-directory: tests/host
         run: make -j"$(nproc)"
 
       - name: Run URI and state tests
+        timeout-minutes: 5
         working-directory: tests/host
         run: |
           make run-playstates
@@ -46,8 +55,38 @@ jobs:
           make run-object-host
           make run-configbq-host
 
+      - name: Run synchronization regressions
+        working-directory: tests/host
+        run: |
+          timeout -k 5s 120 make run-bufferqueue-original run-sawtooth-original run-threads run-thread-pool run-callback-clear run-sync-destroy
+          if [ "$THREAD_BACKEND" = sce-mock ]; then
+            timeout -k 5s 60 make run-engine-failures
+          fi
+
+      - name: Run debug ownership checks
+        working-directory: tests/host
+        run: |
+          make -j"$(nproc)" BUILD_DIR=../../build/host-debug EXTRA_CFLAGS=-DUSE_DEBUG all
+          timeout -k 5s 120 make BUILD_DIR=../../build/host-debug EXTRA_CFLAGS=-DUSE_DEBUG run-bufferqueue-original run-sawtooth-original run-threads run-thread-pool run-callback-clear run-sync-destroy
+          if [ "$THREAD_BACKEND" = sce-mock ]; then
+            timeout -k 5s 60 make BUILD_DIR=../../build/host-debug EXTRA_CFLAGS=-DUSE_DEBUG run-engine-failures
+          fi
+
       - name: Run object-limit pressure tests
         working-directory: tests/host
         run: |
-          make run-manyplayers
-          make run-churn
+          timeout -k 5s 360 make run-manyplayers run-churn
+
+      - name: Exercise Vita playback startup and device failures
+        if: matrix.backend == 'sce-mock'
+        working-directory: tests/host
+        env:
+          ASAN_OPTIONS: detect_leaks=1:halt_on_error=1
+          UBSAN_OPTIONS: halt_on_error=1
+        run: |
+          export AUDIO_BACKEND=vita-mock
+          export BUILD_DIR=../../build/vita-mock-sanitized
+          export EXTRA_CFLAGS='-DUSE_DEBUG -fsanitize=address,undefined -fno-omit-frame-pointer'
+          export EXTRA_LDFLAGS='-fsanitize=address,undefined'
+          make -j"$(nproc)" all
+          timeout -k 5s 150 make run-bufferqueue-original run-sawtooth-original run-threads run-thread-pool run-callback-clear run-engine-failures run-sync-destroy

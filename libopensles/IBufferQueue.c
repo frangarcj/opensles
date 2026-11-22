@@ -159,6 +159,24 @@ fail:
 }
 
 
+#ifdef USE_OUTPUTMIXEXT
+void IBufferQueue_ClearLocked(IBufferQueue *this)
+{
+    CAudioPlayer *player = (CAudioPlayer *)this->mThis;
+    IBufferQueue_ReleaseArrayBuffers(this);
+    this->mFront = this->mArray;
+    this->mRear = this->mArray;
+    this->mState.count = 0;
+    this->mState.playIndex = 0;
+    this->mClearRequested = SL_BOOLEAN_FALSE;
+    if (player->mTrack != NULL) {
+        player->mTrack->mReader = NULL;
+        player->mTrack->mAvail = 0;
+    }
+    interface_cond_broadcast(this);
+}
+#endif
+
 SLresult IBufferQueue_Clear(SLBufferQueueItf self)
 {
     SL_ENTER_INTERFACE
@@ -184,12 +202,16 @@ SLresult IBufferQueue_Clear(SLBufferQueueItf self)
 #endif
 
 #ifdef USE_OUTPUTMIXEXT
-    // mixer might be reading from the front buffer, so tread carefully here
-    // NTH asynchronous cancel instead of blocking until mixer acknowledges
-    this->mClearRequested = SL_BOOLEAN_TRUE;
-    do {
-        interface_cond_wait(this);
-    } while (this->mClearRequested);
+    CAudioPlayer *player = (CAudioPlayer *)this->mThis;
+    if (player->mTrack == NULL || IEngine_IsMixerThread(player->mObject.mEngine)) {
+        // A mixer callback cannot wait for the mixer to acknowledge itself.
+        IBufferQueue_ClearLocked(this);
+    } else {
+        this->mClearRequested = SL_BOOLEAN_TRUE;
+        do {
+            interface_cond_wait(this);
+        } while (this->mClearRequested);
+    }
 #endif
 
     interface_unlock_exclusive(this);

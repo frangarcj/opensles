@@ -93,15 +93,7 @@ static SLboolean track_check(Track *track)
         if (audioPlayer->mBufferQueue.mClearRequested) {
             // application thread(s) that call BufferQueue::Clear while mixer is active
             // will block synchronously until mixer acknowledges the Clear request
-            IBufferQueue_ReleaseArrayBuffers(&audioPlayer->mBufferQueue);
-            audioPlayer->mBufferQueue.mFront = &audioPlayer->mBufferQueue.mArray[0];
-            audioPlayer->mBufferQueue.mRear = &audioPlayer->mBufferQueue.mArray[0];
-            audioPlayer->mBufferQueue.mState.count = 0;
-            audioPlayer->mBufferQueue.mState.playIndex = 0;
-            audioPlayer->mBufferQueue.mClearRequested = SL_BOOLEAN_FALSE;
-            track->mReader = NULL;
-            track->mAvail = 0;
-            doBroadcast = SL_BOOLEAN_TRUE;
+            IBufferQueue_ClearLocked(&audioPlayer->mBufferQueue);
         }
 
         if (audioPlayer->mDestroyRequested) {
@@ -190,23 +182,23 @@ broadcast:
             object_cond_broadcast(&audioPlayer->mObject);
         }
 
-        object_unlock_exclusive(&audioPlayer->mObject);
-
+        SLuint32 eventFlags = audioPlayer->mPlay.mEventFlags;
         if (headAtMarker || headAtNewPos || headAtEnd || headStalled) {
             playCallback = audioPlayer->mPlay.mCallback;
             playContext = audioPlayer->mPlay.mContext;
         }
+        object_unlock_exclusive(&audioPlayer->mObject);
         if (NULL != playCallback) {
-            if (headAtMarker && (audioPlayer->mPlay.mEventFlags & SL_PLAYEVENT_HEADATMARKER)) {
+            if (headAtMarker && (eventFlags & SL_PLAYEVENT_HEADATMARKER)) {
                 (*playCallback)(&audioPlayer->mPlay.mItf, playContext, SL_PLAYEVENT_HEADATMARKER);
             }
-            if (headAtNewPos && (audioPlayer->mPlay.mEventFlags & SL_PLAYEVENT_HEADATNEWPOS)) {
+            if (headAtNewPos && (eventFlags & SL_PLAYEVENT_HEADATNEWPOS)) {
                 (*playCallback)(&audioPlayer->mPlay.mItf, playContext, SL_PLAYEVENT_HEADATNEWPOS);
             }
-            if (headStalled && (audioPlayer->mPlay.mEventFlags & SL_PLAYEVENT_HEADSTALLED)) {
+            if (headStalled && (eventFlags & SL_PLAYEVENT_HEADSTALLED)) {
                 (*playCallback)(&audioPlayer->mPlay.mItf, playContext, SL_PLAYEVENT_HEADSTALLED);
             }
-            if (headAtEnd && (audioPlayer->mPlay.mEventFlags & SL_PLAYEVENT_HEADATEND)) {
+            if (headAtEnd && (eventFlags & SL_PLAYEVENT_HEADATEND)) {
                 (*playCallback)(&audioPlayer->mPlay.mItf, playContext, SL_PLAYEVENT_HEADATEND);
             }
         }
@@ -217,6 +209,15 @@ broadcast:
 
 }
 
+
+SLboolean IEngine_IsMixerThread(IEngine *this)
+{
+    interface_lock_exclusive(this);
+    SLboolean result = this->mMixerThreadValid &&
+        sles_thread_equal(this->mMixerThread, sles_thread_self());
+    interface_unlock_exclusive(this);
+    return result;
+}
 
 /** \brief This is the track mixer: fill the specified 16-bit stereo PCM buffer */
 
@@ -229,6 +230,11 @@ void IOutputMixExt_FillBuffer(SLOutputMixExtItf self, void *pBuffer, SLuint32 si
     SLboolean mixBufferHasData = SL_BOOLEAN_FALSE;
     IOutputMixExt *this = (IOutputMixExt *) self;
     IObject *thisObject = this->mThis;
+    IEngine *engine = thisObject->mEngine;
+    interface_lock_exclusive(engine);
+    engine->mMixerThread = sles_thread_self();
+    engine->mMixerThreadValid = SL_BOOLEAN_TRUE;
+    interface_unlock_exclusive(engine);
     COutputMix *outputMix = (COutputMix *) thisObject;
     float outputMixGains[STEREO_CHANNELS];
     Summary outputMixSummaries[STEREO_CHANNELS];
@@ -333,6 +339,8 @@ void IOutputMixExt_FillBuffer(SLOutputMixExtItf self, void *pBuffer, SLuint32 si
                 desired -= actual;
                 track->mReader = (char *) track->mReader + actual;
                 track->mAvail -= actual;
+                // Re-entrant Stop must be able to discard these already-mixed frames.
+                track->mFramesMixed += actual >> 2;
                 if (track->mAvail == 0) {
                     IBufferQueue *bufferQueue = &track->mAudioPlayer->mBufferQueue;
                     interface_lock_exclusive(bufferQueue);
@@ -369,8 +377,6 @@ void IOutputMixExt_FillBuffer(SLOutputMixExtItf self, void *pBuffer, SLuint32 si
                         // We will find out later during the next mixer frame.
                     }
                 }
-                // no lock, but safe because noone else updates this field
-                track->mFramesMixed += actual >> 2;    // sizeof(short) * STEREO_CHANNELS
                 continue;
             }
             // we need more data: desired > 0 but actual == 0
@@ -388,6 +394,9 @@ void IOutputMixExt_FillBuffer(SLOutputMixExtItf self, void *pBuffer, SLuint32 si
         }
     }
     object_unlock_exclusive(thisObject);
+    interface_lock_exclusive(engine);
+    engine->mMixerThreadValid = SL_BOOLEAN_FALSE;
+    interface_unlock_exclusive(engine);
     if (mixBufferHasData) {
         if ((GAIN_MUTE == outputMixSummaries[0]) && (GAIN_MUTE == outputMixSummaries[1])) {
             memset(pBuffer, 0, size);

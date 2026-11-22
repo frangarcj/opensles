@@ -559,12 +559,16 @@ void IObject_Destroy(SLObjectItf self)
         --i;
         assert(0 != thisEngine->mInstanceMask);
         thisEngine->mInstanceMask &= ~(1 << i);
+        thisEngine->mChangedMask &= ~(1 << i);
         assert(thisEngine->mInstances[i] == this);
         thisEngine->mInstances[i] = NULL;
     }
     // avoid a recursive unlock on the engine when destroying the engine itself
     if (thisEngine->mThis != this) {
         interface_unlock_exclusive(thisEngine);
+    }
+    while (__atomic_load_n(&this->mSyncRefCount, __ATOMIC_ACQUIRE) != 0) {
+        object_cond_wait(this);
     }
     // The destroy hook is called with mutex locked
     if (NULL != destroy) {
@@ -750,16 +754,11 @@ void IObject_init(void *self)
     this->mPreemptable = SL_BOOLEAN_FALSE;
 #endif
     this->mStrongRefCount = 0;
-    int ok;
-    ok = pthread_mutex_init(&this->mMutex, (const pthread_mutexattr_t *) NULL);
-    assert(0 == ok);
 #ifdef USE_DEBUG
-    memset(&this->mOwner, 0, sizeof(pthread_t));
+    memset(&this->mOwner, 0, sizeof(sles_thread_t));
     this->mFile = NULL;
     this->mLine = 0;
 #endif
-    ok = pthread_cond_init(&this->mCond, (const pthread_condattr_t *) NULL);
-    assert(0 == ok);
 }
 
 
@@ -769,15 +768,15 @@ void IObject_deinit(void *self)
 {
     IObject *this = (IObject *) self;
 #ifdef USE_DEBUG
-    assert(pthread_equal(pthread_self(), this->mOwner));
+    assert(sles_thread_equal(sles_thread_self(), this->mOwner));
 #endif
     int ok;
-    ok = pthread_cond_destroy(&this->mCond);
+    ok = sles_cond_destroy(&this->mCond);
     assert(0 == ok);
     // equivalent to object_unlock_exclusive, but without the rigmarole
-    ok = pthread_mutex_unlock(&this->mMutex);
+    ok = sles_mutex_unlock(&this->mMutex);
     assert(0 == ok);
-    ok = pthread_mutex_destroy(&this->mMutex);
+    ok = sles_mutex_destroy(&this->mMutex);
     assert(0 == ok);
     // redundant: this->mState = SL_OBJECT_STATE_UNREALIZED;
 }

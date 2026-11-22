@@ -68,6 +68,25 @@ static SLresult IPlay_SetPlayState(SLPlayItf self, SLuint32 state)
             (CAudioPlayer *) this->mThis : NULL;
         interface_lock_exclusive(this);
 #ifdef USE_OUTPUTMIXEXT
+        if (state == SL_PLAYSTATE_STOPPED && audioPlayer != NULL &&
+                IEngine_IsMixerThread(audioPlayer->mObject.mEngine)) {
+            // A callback must not wait for its own mixer to perform this transition.
+            this->mState = SL_PLAYSTATE_STOPPED;
+            this->mPosition = 0;
+            this->mFramesSinceLastSeek = 0;
+            this->mFramesSincePositionUpdate = 0;
+            this->mLastSeekPosition = 0;
+            this->mHeadAtEnd = SL_BOOLEAN_FALSE;
+            this->mHeadStalled = SL_BOOLEAN_FALSE;
+            this->mMarkerReached = SL_BOOLEAN_FALSE;
+            audioPlayer->mSeek.mPos = SL_TIME_UNKNOWN;
+            if (audioPlayer->mTrack != NULL) {
+                audioPlayer->mTrack->mReader = NULL;
+                audioPlayer->mTrack->mAvail = 0;
+                audioPlayer->mTrack->mFramesMixed = 0;
+            }
+            interface_cond_broadcast(this);
+        }
         for (;; interface_cond_wait(this)) {
 
             // We are comparing the old state (left) vs. new state (right).

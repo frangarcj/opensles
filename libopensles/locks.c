@@ -23,64 +23,64 @@
 void object_lock_exclusive_(IObject *this, const char *file, int line)
 {
     int ok;
-    ok = pthread_mutex_trylock(&this->mMutex);
+    ok = sles_mutex_trylock(&this->mMutex);
     if (0 != ok) {
         // pthread_mutex_timedlock_np is not available, but wait up to 100 ms
         static const useconds_t backoffs[] = {1, 10000, 20000, 30000, 40000};
         unsigned i = 0;
         for (;;) {
             usleep(backoffs[i]);
-            ok = pthread_mutex_trylock(&this->mMutex);
+            ok = sles_mutex_trylock(&this->mMutex);
             if (0 == ok)
                 break;
             if (++i >= (sizeof(backoffs) / sizeof(backoffs[0]))) {
-                SL_LOGE("%s:%d: object %p was locked by %p at %s:%d\n",
-                    file, line, this, *(void **)&this->mOwner, this->mFile, this->mLine);
+                SL_LOGE("%s:%d: object %p remained contended for 100 ms\n",
+                    file, line, this);
                 // attempt one more time; maybe this time we will be successful
-                ok = pthread_mutex_lock(&this->mMutex);
+                ok = sles_mutex_lock(&this->mMutex);
                 assert(0 == ok);
                 break;
             }
         }
     }
-    pthread_t zero;
-    memset(&zero, 0, sizeof(pthread_t));
-    if (0 != memcmp(&zero, &this->mOwner, sizeof(pthread_t))) {
-        if (pthread_equal(pthread_self(), this->mOwner)) {
-            SL_LOGE("%s:%d: object %p was recursively locked by %p at %s:%d\n",
-                file, line, this, *(void **)&this->mOwner, this->mFile, this->mLine);
+    sles_thread_t zero;
+    memset(&zero, 0, sizeof(sles_thread_t));
+    if (0 != memcmp(&zero, &this->mOwner, sizeof(sles_thread_t))) {
+        if (sles_thread_equal(sles_thread_self(), this->mOwner)) {
+            SL_LOGE("%s:%d: recursive object lock %p; previous lock %s:%d\n",
+                file, line, this, this->mFile, this->mLine);
         } else {
-            SL_LOGE("%s:%d: object %p was left unlocked in unexpected state by %p at %s:%d\n",
-                file, line, this, *(void **)&this->mOwner, this->mFile, this->mLine);
+            SL_LOGE("%s:%d: object %p had stale owner metadata from %s:%d\n",
+                file, line, this, this->mFile, this->mLine);
         }
         assert(false);
     }
-    this->mOwner = pthread_self();
+    this->mOwner = sles_thread_self();
     this->mFile = file;
     this->mLine = line;
 }
 
 SLboolean object_trylock_exclusive_(IObject *this, const char *file, int line)
 {
-    int ok = pthread_mutex_trylock(&this->mMutex);
+    int ok = sles_mutex_trylock(&this->mMutex);
     if (EBUSY == ok) {
         return SL_BOOLEAN_FALSE;
     }
     assert(0 == ok);
 
-    pthread_t zero;
-    memset(&zero, 0, sizeof(pthread_t));
-    if (0 != memcmp(&zero, &this->mOwner, sizeof(pthread_t))) {
-        if (pthread_equal(pthread_self(), this->mOwner)) {
-            SL_LOGE("%s:%d: object %p was recursively trylocked by %p at %s:%d\n",
-                file, line, this, *(void **)&this->mOwner, this->mFile, this->mLine);
+    sles_thread_t zero;
+    memset(&zero, 0, sizeof(sles_thread_t));
+    if (0 != memcmp(&zero, &this->mOwner, sizeof(sles_thread_t))) {
+        if (sles_thread_equal(sles_thread_self(), this->mOwner)) {
+            SL_LOGE("%s:%d: recursive object trylock %p; previous lock %s:%d\n",
+                file, line, this, this->mFile, this->mLine);
         } else {
-            SL_LOGE("%s:%d: object %p was left unlocked in unexpected state by %p at %s:%d\n",
-                file, line, this, *(void **)&this->mOwner, this->mFile, this->mLine);
+            SL_LOGE("%s:%d: object %p had stale owner metadata from %s:%d\n",
+                file, line, this, this->mFile, this->mLine);
         }
         assert(false);
     }
-    this->mOwner = pthread_self();
+    this->mOwner = sles_thread_self();
     this->mFile = file;
     this->mLine = line;
     return SL_BOOLEAN_TRUE;
@@ -89,13 +89,13 @@ SLboolean object_trylock_exclusive_(IObject *this, const char *file, int line)
 void object_lock_exclusive(IObject *this)
 {
     int ok;
-    ok = pthread_mutex_lock(&this->mMutex);
+    ok = sles_mutex_lock(&this->mMutex);
     assert(0 == ok);
 }
 
 SLboolean object_trylock_exclusive(IObject *this)
 {
-    int ok = pthread_mutex_trylock(&this->mMutex);
+    int ok = sles_mutex_trylock(&this->mMutex);
     if (EBUSY == ok) {
         return SL_BOOLEAN_FALSE;
     }
@@ -110,21 +110,21 @@ SLboolean object_trylock_exclusive(IObject *this)
 #ifdef USE_DEBUG
 void object_unlock_exclusive_(IObject *this, const char *file, int line)
 {
-    assert(pthread_equal(pthread_self(), this->mOwner));
+    assert(sles_thread_equal(sles_thread_self(), this->mOwner));
     assert(NULL != this->mFile);
     assert(0 != this->mLine);
-    memset(&this->mOwner, 0, sizeof(pthread_t));
+    memset(&this->mOwner, 0, sizeof(sles_thread_t));
     this->mFile = file;
     this->mLine = line;
     int ok;
-    ok = pthread_mutex_unlock(&this->mMutex);
+    ok = sles_mutex_unlock(&this->mMutex);
     assert(0 == ok);
 }
 #else
 void object_unlock_exclusive(IObject *this)
 {
     int ok;
-    ok = pthread_mutex_unlock(&this->mMutex);
+    ok = sles_mutex_unlock(&this->mMutex);
     assert(0 == ok);
 }
 #endif
@@ -143,7 +143,7 @@ void object_unlock_exclusive_attributes(IObject *this, unsigned attributes)
 {
 
 #ifdef USE_DEBUG
-    assert(pthread_equal(pthread_self(), this->mOwner));
+    assert(sles_thread_equal(sles_thread_self(), this->mOwner));
     assert(NULL != this->mFile);
     assert(0 != this->mLine);
 #endif
@@ -250,11 +250,11 @@ void object_unlock_exclusive_attributes(IObject *this, unsigned attributes)
             attributes = ATTR_NONE;
     }
 #ifdef USE_DEBUG
-    memset(&this->mOwner, 0, sizeof(pthread_t));
+    memset(&this->mOwner, 0, sizeof(sles_thread_t));
     this->mFile = file;
     this->mLine = line;
 #endif
-    ok = pthread_mutex_unlock(&this->mMutex);
+    ok = sles_mutex_unlock(&this->mMutex);
     assert(0 == ok);
     // first update to this interface since previous sync
     if (attributes) {
@@ -272,24 +272,24 @@ void object_unlock_exclusive_attributes(IObject *this, unsigned attributes)
 }
 
 
-/** \brief Wait on the condition variable associated with the object; see pthread_cond_wait */
+/** \brief Wait on the condition variable associated with the object; see sles_cond_wait */
 
 #ifdef USE_DEBUG
 void object_cond_wait_(IObject *this, const char *file, int line)
 {
     // note that this will unlock the mutex, so we have to clear the owner
-    assert(pthread_equal(pthread_self(), this->mOwner));
+    assert(sles_thread_equal(sles_thread_self(), this->mOwner));
     assert(NULL != this->mFile);
     assert(0 != this->mLine);
-    memset(&this->mOwner, 0, sizeof(pthread_t));
+    memset(&this->mOwner, 0, sizeof(sles_thread_t));
     this->mFile = file;
     this->mLine = line;
     // alas we don't know the new owner's identity
     int ok;
-    ok = pthread_cond_wait(&this->mCond, &this->mMutex);
+    ok = sles_cond_wait(&this->mCond, &this->mMutex);
     assert(0 == ok);
     // restore my ownership
-    this->mOwner = pthread_self();
+    this->mOwner = sles_thread_self();
     this->mFile = file;
     this->mLine = line;
 }
@@ -297,29 +297,46 @@ void object_cond_wait_(IObject *this, const char *file, int line)
 void object_cond_wait(IObject *this)
 {
     int ok;
-    ok = pthread_cond_wait(&this->mCond, &this->mMutex);
+    ok = sles_cond_wait(&this->mCond, &this->mMutex);
     assert(0 == ok);
 }
 #endif
 
 
-/** \brief Signal the condition variable associated with the object; see pthread_cond_signal */
+/** \brief Signal the condition variable associated with the object; see sles_cond_signal */
+
+int object_cond_timedwait(IObject *this, uint32_t timeout_us)
+{
+#ifdef USE_DEBUG
+    assert(sles_thread_equal(sles_thread_self(), this->mOwner));
+    const char *file = this->mFile;
+    int line = this->mLine;
+    memset(&this->mOwner, 0, sizeof(this->mOwner));
+#endif
+    int result = sles_cond_timedwait(&this->mCond, &this->mMutex, timeout_us);
+#ifdef USE_DEBUG
+    this->mOwner = sles_thread_self();
+    this->mFile = file;
+    this->mLine = line;
+#endif
+    return result;
+}
 
 void object_cond_signal(IObject *this)
 {
     int ok;
-    ok = pthread_cond_signal(&this->mCond);
+    ok = sles_cond_signal(&this->mCond);
     assert(0 == ok);
 }
 
 
 /** \brief Broadcast the condition variable associated with the object;
- *  see pthread_cond_broadcast
+ *  see sles_cond_broadcast
  */
 
 void object_cond_broadcast(IObject *this)
 {
     int ok;
-    ok = pthread_cond_broadcast(&this->mCond);
+    ok = sles_cond_broadcast(&this->mCond);
     assert(0 == ok);
 }

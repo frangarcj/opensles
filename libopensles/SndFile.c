@@ -102,9 +102,9 @@ void audioPlayerRefillBuffers(CAudioPlayer *audioPlayer)
             return;
         }
 
-        pthread_mutex_lock(&this->mMutex);
+        sles_mutex_lock(&this->mMutex);
         if (this->mEOF) {
-            pthread_mutex_unlock(&this->mMutex);
+            sles_mutex_unlock(&this->mMutex);
             return;
         }
 
@@ -114,7 +114,7 @@ void audioPlayerRefillBuffers(CAudioPlayer *audioPlayer)
         }
 
         sf_count_t count = sf_read_short(this->mSNDFILE, pBuffer, (sf_count_t) SndFile_BUFSIZE);
-        pthread_mutex_unlock(&this->mMutex);
+        sles_mutex_unlock(&this->mMutex);
 
         if (0 < count) {
             SLresult result = IBufferQueue_Enqueue(&audioPlayer->mBufferQueue.mItf, pBuffer,
@@ -307,7 +307,7 @@ void audioPlayerTransportUpdate(CAudioPlayer *audioPlayer)
             empty = SL_BOOLEAN_TRUE;
             sndfile_update_prefetch_fill_level(audioPlayer, 0);
 
-            pthread_mutex_lock(&audioPlayer->mSndFile.mMutex);
+            sles_mutex_lock(&audioPlayer->mSndFile.mMutex);
             sf_count_t seekResult = sf_seek(audioPlayer->mSndFile.mSNDFILE,
                 (sf_count_t) (((long long) pos * audioPlayer->mSndFile.mSfInfo.samplerate) / 1000LL),
                 SEEK_SET);
@@ -316,7 +316,7 @@ void audioPlayerTransportUpdate(CAudioPlayer *audioPlayer)
                 audioPlayer->mSndFile.mWhich = 0;
                 seekSucceeded = SL_BOOLEAN_TRUE;
             }
-            pthread_mutex_unlock(&audioPlayer->mSndFile.mMutex);
+            sles_mutex_unlock(&audioPlayer->mSndFile.mMutex);
 
             if (!seekSucceeded) {
                 SL_LOGE("sndfile seek failed for position %u ms", (unsigned) pos);
@@ -354,8 +354,12 @@ SLresult SndFile_Realize(CAudioPlayer *this)
             result = SL_RESULT_CONTENT_UNSUPPORTED;
         } else {
             int ok;
-            ok = pthread_mutex_init(&this->mSndFile.mMutex, (const pthread_mutexattr_t *) NULL);
-            assert(0 == ok);
+            ok = sles_mutex_init(&this->mSndFile.mMutex);
+            if (ok != 0) {
+                sf_close(this->mSndFile.mSNDFILE);
+                this->mSndFile.mSNDFILE = NULL;
+                return err_to_result(ok);
+            }
             // URI players need internal refill/position callbacks even when the public
             // BufferQueue interface is not exposed.
             this->mBufferQueue.mThis = &this->mObject;
@@ -390,7 +394,7 @@ void SndFile_Destroy(CAudioPlayer *this)
         sf_close(this->mSndFile.mSNDFILE);
         this->mSndFile.mSNDFILE = NULL;
         int ok;
-        ok = pthread_mutex_destroy(&this->mSndFile.mMutex);
+        ok = sles_mutex_destroy(&this->mSndFile.mMutex);
         assert(0 == ok);
     }
 }

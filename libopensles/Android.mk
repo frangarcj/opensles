@@ -37,6 +37,7 @@ LOCAL_CFLAGS += -fvisibility=hidden -DSLAPIENTRY='__attribute__((visibility("def
 
 LOCAL_SRC_FILES:=                     \
         OpenSLES_IID.c                \
+        threads.c                     \
         classes.c                     \
         devices.c                     \
         trace.c                       \

@@ -1,4 +1,7 @@
 *.o
 *.a
+*.d
+.build-config
+.build-config.tmp
 # Host-test build artifacts
-/build/host-tests/
+/build/

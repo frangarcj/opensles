@@ -27,7 +27,8 @@ static SLresult IEngine_AllocateBufferQueueArray(IBufferQueue *bufferQueue)
         if (bufferQueue->mNumBuffers >= 256) {
             return SL_RESULT_MEMORY_FAILURE;
         }
-        bufferQueue->mArray = (BufferHeader *) malloc((bufferQueue->mNumBuffers + 1) *
+        // Cleanup also visits unused slots, whose owned-buffer pointers must be null.
+        bufferQueue->mArray = (BufferHeader *) calloc(bufferQueue->mNumBuffers + 1,
             sizeof(BufferHeader));
         if (NULL == bufferQueue->mArray) {
             return SL_RESULT_MEMORY_FAILURE;
